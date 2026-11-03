@@ -68,18 +68,40 @@ function renderSetup(){
 function renderAuth(){
   const m = S.authMode, up = m === "up", reset = m === "reset";
   const joining = /^#\/join\//.test(location.hash);
+  const formTitle = up ? "Create account" : reset ? "Reset password" : "Sign in";
+  const lede = joining ? "You were invited to a group. " + (up ? "Create an account" : "Sign in") + " to join it." : "Split costs with friends. Everyone in a group sees the same ledger, live.";
   app.innerHTML = header() +
-    "<h1>" + (up ? "Create your account" : reset ? "Reset your password" : "Sign in") + "</h1>" +
-    '<p class="lede">' + (joining ? "You were invited to a group. " + (up ? "Create an account" : "Sign in") + " to join it." : "Split costs with friends. Everyone in a group sees the same ledger, live.") + "</p>" +
-    '<form class="paper" id="authForm" novalidate style="margin-top:22px"><div class="stack">' +
-    (up ? '<label>Your name<input id="aName" autocomplete="name" maxlength="40"></label>' : "") +
-    '<label>Email<input id="aEmail" type="email" autocomplete="email" inputmode="email" autocapitalize="none"></label>' +
-    (reset ? "" : '<label>Password' + (up ? " (8 or more characters)" : "") + '<input id="aPass" type="password" autocomplete="' + (up ? "new-password" : "current-password") + '"></label>') +
-    '</div><div class="msg" id="aMsg" role="alert"></div><div class="actions"><button class="primary" type="submit">' + (up ? "Create account" : reset ? "Send reset link" : "Sign in") + "</button></div>" +
-    '<div class="links">' +
-    (m === "in" ? '<button type="button" class="linkbtn" data-act="mode" data-mode="up">New here? Create an account</button><button type="button" class="linkbtn" data-act="mode" data-mode="reset">Forgot password</button>' :
-      '<button type="button" class="linkbtn" data-act="mode" data-mode="in">' + (up ? "Already have an account? Sign in" : "Back to sign in") + "</button>") +
-    "</div></form>";
+    '<div class="statusbar"><span class="dot" aria-hidden="true"></span>LIVE · REALTIME LEDGER</div>' +
+    '<h1 class="headline"><span class="l1">Split costs.</span><span class="l2">Stay settled.</span></h1>' +
+    '<div class="hero">' +
+      '<div class="hero-copy">' +
+        '<p class="lede">' + esc(lede) + '</p>' +
+        '<form class="paper" id="authForm" novalidate style="margin-top:18px">' +
+          '<p class="kicker">Account</p><h2>' + formTitle + '</h2><div class="stack">' +
+          (up ? '<label>Your name<input id="aName" autocomplete="name" maxlength="40"></label>' : "") +
+          '<label>Email<input id="aEmail" type="email" autocomplete="email" inputmode="email" autocapitalize="none"></label>' +
+          (reset ? "" : '<label>Password' + (up ? " (8 or more characters)" : "") + '<input id="aPass" type="password" autocomplete="' + (up ? "new-password" : "current-password") + '"></label>') +
+          '</div><div class="msg" id="aMsg" role="alert"></div><div class="actions"><button class="primary" type="submit">' + (up ? "Create account" : reset ? "Send reset link" : "Sign in") + "</button></div>" +
+          '<div class="links">' +
+          (m === "in" ? '<button type="button" class="linkbtn" data-act="mode" data-mode="up">New here? Create an account</button><button type="button" class="linkbtn" data-act="mode" data-mode="reset">Forgot password</button>' :
+            '<button type="button" class="linkbtn" data-act="mode" data-mode="in">' + (up ? "Already have an account? Sign in" : "Back to sign in") + "</button>") +
+          "</div></form>" +
+      "</div>" +
+      '<div class="livepanel" aria-hidden="true">' +
+        '<div class="lp-head"><span class="dot"></span>ledger.live — goa-trip</div>' +
+        '<div class="lp-body">' +
+          '<div class="lp-line"><span class="lp-cm"># shared ledger, synced in real time</span></div>' +
+          '<div class="lp-line"><span class="lp-kw">[group.goa-trip]</span></div>' +
+          '<div class="lp-line"><span class="lp-key">members</span> = [<span class="lp-str">"asha"</span>, <span class="lp-str">"ravi"</span>, <span class="lp-str">"nina"</span>] + you</div>' +
+          '<div class="lp-line"><span class="lp-key">currency</span> = <span class="lp-str">"₹"</span></div>' +
+          '<div class="lp-line">&nbsp;</div>' +
+          '<div class="lp-line"><span class="lp-kw">[group.goa-trip.balance]</span></div>' +
+          '<div class="lp-line"><span class="lp-key">you_get</span> = <span class="lp-num">1,240</span></div>' +
+          '<div class="lp-line"><span class="lp-key">status</span>  = <span class="lp-str">"settled after next payment"</span></div>' +
+        "</div>" +
+        '<div class="lp-foot"><span>3 members · 12 expenses</span><span class="ok">● synced</span></div>' +
+      "</div>" +
+    "</div>";
   chrome.innerHTML = "";
 }
 function setMsg(sel, text, ok){ const el = $(sel); if (!el) return; el.textContent = text || ""; el.className = "msg" + (text ? (ok ? " ok" : " bad") : ""); }
