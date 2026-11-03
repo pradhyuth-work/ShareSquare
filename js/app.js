@@ -1,5 +1,5 @@
 import { sb, configured } from "./client.js";
-import { MONTHS, fmt as fmtM, fmtWhole as fmtW, parseMoney, computeSplit, balances, settleUp, involved, mname } from "./math.js";
+import { MONTHS, fmt as fmtM, fmtWhole as fmtW, parseMoney, computeSplit, balances, settlements, involved, mname } from "./math.js";
 import { buildXlsx, groupSheets } from "./xlsx.js";
 
 /* ================= helpers ================= */
@@ -286,14 +286,17 @@ function viewExpenses(G){
   }
   return h + "</section>";
 }
+function simplifyOn(G){ try { return localStorage.getItem("ss_simplify_" + G.id) !== "0"; } catch (e) { return true; } }
+function setSimplify(G, on){ try { localStorage.setItem("ss_simplify_" + G.id, on ? "1" : "0"); } catch (e) {} }
 function viewBalances(G, b){
   let h = '<section class="paper"><p class="kicker">Balances</p><h2>Who is owed what</h2>';
   h += G.members.map(m => {
     const n = b.net[m.id];
     return '<div class="bal"><strong>' + esc(m.name) + (m.id === G.me ? ' <em class="you">you</em>' : "") + "</strong>" + (n > 0 ? '<span class="pos">gets back ' + fmt(n) + "</span>" : n < 0 ? '<span class="neg">owes ' + fmt(-n) + "</span>" : '<span class="zero">settled up</span>') + "</div>";
   }).join("") + "</section>";
-  const sug = settleUp(b.net);
-  h += '<section class="paper"><p class="kicker">Settle up</p><h2>' + (sug.length ? "Fewest payments to clear everything" : "Everyone is settled up") + "</h2>";
+  const simplify = simplifyOn(G), sug = settlements(G, simplify);
+  h += '<section class="paper"><p class="kicker">Settle up</p><h2>' + (sug.length ? (simplify ? "Fewest payments to clear everything" : "Who owes whom") : "Everyone is settled up") + "</h2>";
+  h += '<div class="switchrow"><span class="swtxt"><strong>Simplify debts</strong><small>' + (simplify ? "On: fewest payments, possibly between people who never shared a bill." : "Off: shows who owes whom directly.") + '</small></span><button type="button" class="switch" role="switch" aria-checked="' + simplify + '" aria-label="Simplify debts" data-act="simplify"><span class="knob"></span></button></div>';
   if (sug.length) h += sug.map((s, i) => {
     const text = s.from === G.me ? "You pay " + esc(mname(G, s.to)) : s.to === G.me ? esc(mname(G, s.from)) + " pays you" : esc(mname(G, s.from)) + " pays " + esc(mname(G, s.to));
     return '<div class="settle"><div class="who">' + text + '</div><span class="stamp">' + fmt(s.amount) + '</span><button class="small" data-act="record" data-i="' + i + '">Record</button></div>';
@@ -451,7 +454,7 @@ function openPayDialog(pre){
 
 /* ================= summary + export ================= */
 function summaryText(G){
-  const b = balances(G), sug = settleUp(b.net);
+  const b = balances(G), sug = settlements(G, simplifyOn(G));
   let t = G.name + "\nTotal spent: " + fmt(G.expenses.reduce((a, e) => a + e.amount, 0)) + "\n\nBalances\n";
   t += G.members.map(m => "• " + m.name + ": " + (b.net[m.id] > 0 ? "gets back " + fmt(b.net[m.id]) : b.net[m.id] < 0 ? "owes " + fmt(-b.net[m.id]) : "settled up")).join("\n");
   t += "\n\nTo settle up\n" + (sug.length ? sug.map(s => "• " + mname(G, s.from) + " pays " + mname(G, s.to) + " " + fmt(s.amount)).join("\n") : "Everyone is settled up.");
@@ -513,13 +516,14 @@ document.addEventListener("click", e => {
         break;
       }
       case "record": {
-        const s = settleUp(balances(G).net)[Number(t.dataset.i)]; if (!s) break;
+        const s = settlements(G, simplifyOn(G))[Number(t.dataset.i)]; if (!s) break;
         t.disabled = true;
         const { error } = await sb.from("payments").insert({ group_id: G.id, from_member: s.from, to_member: s.to, amount_minor: s.amount, payment_date: today() });
         if (error){ t.disabled = false; throw error; }
         await refresh(); toast(who(s.from) + " paid " + who(s.to) + " " + fmt(s.amount) + ".");
         break;
       }
+      case "simplify": setSimplify(G, !simplifyOn(G)); renderGroup(); break;
       case "pay": openPayDialog(null); break;
       case "share": await shareOrCopy(G.name, summaryText(G)); break;
       case "invite": await shareOrCopy("Join " + G.name, 'Join "' + G.name + '" on ShareSquare so we can split costs:', inviteLink(G)); break;
@@ -541,7 +545,7 @@ document.addEventListener("click", e => {
         break;
       }
       case "rmmember": { const { error } = await sb.from("members").delete().eq("id", t.dataset.id); if (error) throw error; await refresh(); break; }
-      case "xlsx": download(buildXlsx(groupSheets(G)), safeName(G.name) + "-" + today() + ".xlsx"); toast("Excel file downloaded."); break;
+      case "xlsx": download(buildXlsx(groupSheets(G, simplifyOn(G))), safeName(G.name) + "-" + today() + ".xlsx"); toast("Excel file downloaded."); break;
       case "delgroup":
         if (confirm('Delete "' + G.name + '" and everything in it, for everyone? This can\'t be undone.')){
           const { error } = await sb.from("groups").delete().eq("id", G.id); if (error) throw error;

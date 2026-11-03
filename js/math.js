@@ -88,6 +88,26 @@ export function settleUp(net){
   return out;
 }
 
+// Without simplifying: who owes whom directly, from the expenses and payments (each pair netted into one amount).
+export function pairwiseDebts(G){
+  const d = {};
+  const add = (from, to, a) => { if (from === to || !a) return; (d[from] = d[from] || {})[to] = ((d[from] || {})[to] || 0) + a; };
+  G.expenses.forEach(e => { for (const id in e.shares) add(id, e.payer, e.shares[id]); });
+  G.payments.forEach(p => add(p.from, p.to, -p.amount));
+  const ids = G.members.map(m => m.id), out = [];
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++){
+    const a = ids[i], b = ids[j];
+    const n = ((d[a] || {})[b] || 0) - ((d[b] || {})[a] || 0);
+    if (n > 0) out.push({ from: a, to: b, amount: n }); else if (n < 0) out.push({ from: b, to: a, amount: -n });
+  }
+  return out;
+}
+
+// The payments to show: fewest payments when simplify is on, otherwise direct person-to-person debts.
+export function settlements(G, simplify = true){
+  return simplify ? settleUp(balances(G).net) : pairwiseDebts(G);
+}
+
 export function involved(G, id){
   return G.expenses.some(e => e.payer === id || (e.shares && id in e.shares)) || G.payments.some(p => p.from === id || p.to === id);
 }

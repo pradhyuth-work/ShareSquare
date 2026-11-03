@@ -43,6 +43,18 @@
   .slip.hi .v{color:var(--magenta)}
   .slip.txt .v{font-size:clamp(14px,4.2vw,20px);letter-spacing:-.02em;padding-top:4px}
 
+  /* simplify-debts switch */
+  .switchrow{display:flex;align-items:center;gap:14px;justify-content:space-between;margin:2px 0 14px;padding:10px 12px;background:var(--panel-2);border:1px solid var(--rule);border-radius:8px}
+  .swtxt{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .swtxt strong{font:600 14px/1.2 var(--mono);color:var(--ink)}
+  .swtxt small{font:400 12px/1.35 var(--mono);color:var(--ink-soft)}
+  .switch{flex:none;position:relative;width:48px;height:28px;min-height:0;padding:0;border-radius:999px;border:1.5px solid var(--rule-2);background:#0b0d0c;cursor:pointer;transition:background .15s,border-color .15s}
+  .switch .knob{position:absolute;top:2px;left:2px;width:21px;height:21px;border-radius:50%;background:var(--ink-soft);transition:transform .15s,background .15s}
+  .switch[aria-checked=true]{background:rgba(57,255,142,.18);border-color:var(--green)}
+  .switch[aria-checked=true] .knob{transform:translateX(20px);background:var(--green)}
+  .switch:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(57,255,142,.25)}
+  @media (prefers-reduced-motion:reduce){.switch,.switch .knob{transition:none}}
+
   /* panels */
   .paper{background:var(--panel);color:var(--ink);border-radius:10px;padding:18px 16px 20px;margin-bottom:16px;
     border:1px solid var(--rule);box-shadow:0 20px 40px -28px rgba(0,0,0,.8)}

@@ -107,3 +107,26 @@ test("involved tells who cannot be removed", () => {
   assert.equal(involved(G, "b"), true);
   assert.equal(involved(G, "c"), false);
 });
+
+test("pairwiseDebts shows direct debts; settlements() switches on simplify", async () => {
+  const { pairwiseDebts, settlements } = await import("../js/math.js");
+  const G = { members: [{ id: "a" }, { id: "b" }, { id: "c" }], payments: [], expenses: [
+    { payer: "a", amount: 3000, shares: { a: 1000, b: 1000, c: 1000 } },
+    { payer: "b", amount: 3000, shares: { a: 1000, b: 1000, c: 1000 } },
+  ] };
+  // c owes a 1000 and b 1000; a and b cancel out. Unsimplified keeps both of c's debts.
+  const d = pairwiseDebts(G);
+  assert.deepEqual(d.map(x => [x.from, x.to, x.amount]).sort(), [["c", "a", 1000], ["c", "b", 1000]]);
+  assert.equal(settlements(G, false).length, 2);
+  assert.equal(settlements(G, true).reduce((s, x) => s + x.amount, 0), 2000);
+  // chain: a paid for b, b paid for c  -> unsimplified 2 payments, simplified 1
+  const H = { members: [{ id: "a" }, { id: "b" }, { id: "c" }], payments: [], expenses: [
+    { payer: "a", amount: 1000, shares: { b: 1000 } },
+    { payer: "b", amount: 1000, shares: { c: 1000 } },
+  ] };
+  assert.equal(settlements(H, false).length, 2);
+  assert.equal(settlements(H, true).length, 1);
+  // payments reduce the direct debt
+  H.payments.push({ from: "b", to: "a", amount: 400 });
+  assert.equal(settlements(H, false).find(x => x.from === "b" && x.to === "a").amount, 600);
+});

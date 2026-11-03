@@ -1,7 +1,7 @@
 // Builds a real .xlsx file in the browser (no libraries). Money cells are numbers, not text.
-import { balances, settleUp, mname } from "./math.js";
+import { balances, settlements, mname } from "./math.js";
 
-export function groupSheets(G){
+export function groupSheets(G, simplify = true){
   const b = balances(G), M = v => ({ m: v / 100 });
   const exp = [["Date", "Description", "Paid by", "Amount", "Split type"].concat(G.members.map(m => m.name + " share"))];
   G.expenses.slice().sort((a, c) => a.date.localeCompare(c.date) || a.ts - c.ts).forEach(e =>
@@ -11,7 +11,7 @@ export function groupSheets(G){
   const bal = [["Person", "Paid for the group", "Their share of costs", "Payments sent", "Payments received", "Net (positive = gets back)"]];
   G.members.forEach(m => bal.push([m.name, M(b.paid[m.id]), M(b.share[m.id]), M(b.sent[m.id]), M(b.recv[m.id]), M(b.net[m.id])]));
   const set = [["Who pays", "Who gets paid", "Amount"]];
-  settleUp(b.net).forEach(s => set.push([mname(G, s.from), mname(G, s.to), M(s.amount)]));
+  settlements(G, simplify).forEach(s => set.push([mname(G, s.from), mname(G, s.to), M(s.amount)]));
   return [
     { name: "Expenses", widths: [12, 30, 16, 12, 12].concat(G.members.map(() => 16)), rows: exp },
     { name: "Balances", widths: [18, 20, 22, 16, 18, 26], rows: bal },
