@@ -260,7 +260,7 @@ function renderGroup(){
   const G = S.G; if (!G) return;
   const b = balances(G), total = G.expenses.reduce((a, e) => a + e.amount, 0), net = b.net[G.me] || 0;
   let h = header('<button data-act="home">All groups</button>') + "<h1>" + esc(G.name) + "</h1>";
-  h += '<div class="slips"><div class="slip"><div class="k">Total spent</div><div class="v">' + fmtWhole(total) + '</div></div><div class="slip"><div class="k">Expenses</div><div class="v">' + G.expenses.length + '</div></div><div class="slip hi"><div class="k">' + (net > 0 ? "You are owed" : net < 0 ? "You owe" : "Your balance") + '</div><div class="v">' + (net === 0 ? "Settled" : fmtWhole(Math.abs(net))) + "</div></div></div>";
+  h += '<div class="slips"><div class="slip"><div class="k">Total spent</div><div class="v">' + fmtWhole(total) + '</div></div><div class="slip"><div class="k">Expenses</div><div class="v">' + G.expenses.length + '</div></div><div class="slip hi' + (net === 0 ? ' txt' : '') + '"><div class="k">' + (net > 0 ? "You are owed" : net < 0 ? "You owe" : "Your balance") + '</div><div class="v">' + (net === 0 ? "Settled" : fmtWhole(Math.abs(net))) + "</div></div></div>";
   h += S.tab === "balances" ? viewBalances(G, b) : S.tab === "group" ? viewGroup(G) : viewExpenses(G);
   app.innerHTML = h;
   chrome.innerHTML = (S.tab !== "group" ? '<button class="primary fab" data-act="add">+ Add expense</button>' : "") +

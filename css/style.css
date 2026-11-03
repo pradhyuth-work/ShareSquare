@@ -41,6 +41,7 @@
   .slip .v{font:700 clamp(19px,5.5vw,27px)/1.1 var(--cond);margin-top:4px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
   .slip.hi{border-color:rgba(255,62,168,.35)}
   .slip.hi .v{color:var(--magenta)}
+  .slip.txt .v{font-size:clamp(14px,4.2vw,20px);letter-spacing:-.02em;padding-top:4px}
 
   /* panels */
   .paper{background:var(--panel);color:var(--ink);border-radius:10px;padding:18px 16px 20px;margin-bottom:16px;
