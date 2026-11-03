@@ -45,8 +45,9 @@ function toast(msg, undo){
 }
 
 /* ================= screens that are not a group ================= */
+const LOGO_SVG = '<svg viewBox="0 0 40 40" width="26" height="26" fill="none" aria-hidden="true"><rect x="6" y="6" width="22" height="22" rx="6" stroke="#39ff8e" stroke-width="3"/><rect x="12" y="12" width="22" height="22" rx="6" stroke="#ff3ea8" stroke-width="3"/></svg>';
 function header(right){
-  return '<header class="top"><div class="tag"><span class="mark" aria-hidden="true">S</span><div><strong>Split Ledger</strong><small>shared with your group</small></div></div>' + (right ? '<div class="right">' + right + "</div>" : "") + "</header>";
+  return '<header class="top"><div class="tag"><span class="mark" aria-hidden="true">' + LOGO_SVG + '</span><div><strong>ShareSquare</strong><small>shared with your group</small></div></div>' + (right ? '<div class="right">' + right + "</div>" : "") + "</header>";
 }
 function renderLoading(text){
   app.innerHTML = header() + '<p class="lede" role="status" style="margin-top:28px">' + esc(text || "Loading…") + "</p>";
@@ -337,7 +338,7 @@ function closeDlg(){ if (dlg.open) dlg.close(); }
 dlg.addEventListener("click", e => { if (e.target === dlg) closeDlg(); });
 
 function openCreateGroup(){
-  let c = "₹"; try { c = localStorage.getItem("sl_cur") || "₹"; } catch (e) {}
+  let c = "₹"; try { c = localStorage.getItem("ss_cur") || "₹"; } catch (e) {}
   showDlg('<form id="gForm" novalidate><h2>New group</h2><label>Group name<input id="gn" placeholder="Goa trip" maxlength="60"></label>' +
     '<label>Currency symbol<input id="gc" value="' + esc(c) + '" maxlength="4" style="max-width:120px"></label>' +
     '<label>Other people, one per line (they can join later with an invite link)<textarea id="gm" placeholder="Ravi&#10;Meena"></textarea></label>' +
@@ -351,7 +352,7 @@ function openCreateGroup(){
     const btn = $("#gForm button[type=submit]"); btn.disabled = true;
     const { data, error } = await sb.rpc("create_group", { p_name: name, p_currency: cu, p_my_name: myName(), p_others: others });
     if (error){ $("#gErr").textContent = nice(error); btn.disabled = false; return; }
-    try { localStorage.setItem("sl_cur", cu); } catch (e) {}
+    try { localStorage.setItem("ss_cur", cu); } catch (e) {}
     closeDlg(); location.hash = "#/g/" + data;
   };
   $("#gn").focus();
@@ -530,7 +531,7 @@ document.addEventListener("click", e => {
       }
       case "pay": openPayDialog(null); break;
       case "share": await shareOrCopy(G.name, summaryText(G)); break;
-      case "invite": await shareOrCopy("Join " + G.name, 'Join "' + G.name + '" on Split Ledger so we can split costs:', inviteLink(G)); break;
+      case "invite": await shareOrCopy("Join " + G.name, 'Join "' + G.name + '" on ShareSquare so we can split costs:', inviteLink(G)); break;
       case "copylink":
         if (navigator.clipboard){ try { await navigator.clipboard.writeText(inviteLink(G)); toast("Invite link copied."); break; } catch (e2){} }
         showText("Invite link", inviteLink(G)); break;

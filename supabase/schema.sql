@@ -1,4 +1,4 @@
--- Split Ledger: tables, security rules and functions for Supabase.
+-- ShareSquare: tables, security rules and functions for Supabase.
 --
 -- How to run: Supabase dashboard > SQL Editor > New query > paste this whole file > Run.
 -- Run it once on a NEW, separate Supabase project (not the DSR project).

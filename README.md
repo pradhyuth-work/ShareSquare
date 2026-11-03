@@ -1,4 +1,4 @@
-# Split Ledger (shared version)
+# ShareSquare
 
 A Splitwise-style app for splitting costs with friends. Everyone in a group sees the same ledger, and changes show up on other phones within a second or two.
 

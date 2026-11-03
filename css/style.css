@@ -25,7 +25,8 @@
   /* header */
   .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .tag{display:flex;align-items:center;gap:10px;background:transparent;color:var(--ink);border-radius:8px;padding:0}
-  .mark{width:34px;height:34px;border-radius:7px;display:grid;place-items:center;border:1.5px solid var(--green);color:var(--green);font:700 16px/1 var(--mono);background:rgba(57,255,142,.08)}
+  .mark{width:34px;height:34px;display:grid;place-items:center}
+  .mark svg{width:26px;height:26px;display:block}
   .tag strong{display:block;font:700 18px/1 var(--mono);letter-spacing:.01em}
   .tag small{display:block;font:400 12px/1.2 var(--mono);color:var(--ink-soft);margin-top:3px}
   .top select{margin-left:auto;max-width:48%;background:var(--panel-2);color:var(--ink);border-color:var(--rule);font-weight:600}
