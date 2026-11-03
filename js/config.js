@@ -4,5 +4,5 @@
 // because the database security rules in supabase/schema.sql protect the data.
 // NEVER paste the "service_role" / "secret" key here.
 
-export const SUPABASE_URL = "https://YOUR-PROJECT-ID.supabase.co";
-export const SUPABASE_ANON_KEY = "YOUR-ANON-PUBLIC-KEY";
+export const SUPABASE_URL = "https://hnehucecnfchxizixekd.supabase.co";
+export const SUPABASE_ANON_KEY = "sb_publishable_2L2Bgy4Cyp4_kavwTD6VgQ_H1Lhk4gy";
