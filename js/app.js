@@ -10,26 +10,34 @@ const fmtDate = d => { const [, m, dd] = d.split("-").map(Number); return dd + "
 const safeName = s => (s || "group").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 40) || "group";
 
 const app = $("#app"), chrome = $("#chrome"), dlg = $("#dlg");
-const S = { boot: true, session: null, recovery: false, view: "loading", authMode: "in", groups: [], G: null, tab: "expenses", openId: null, preview: null };
+const S = { boot: true, session: null, me: null, view: "loading", authMode: "in", groups: [], G: null, tab: "expenses", openId: null, preview: null };
 let seq = 0, rt = null, D = null, refreshTimer = null, refreshSeq = 0;
+
+/* There are no accounts or email: every device gets a silent, anonymous Supabase Auth session
+   (no email involved), and signing in with a 4-digit PIN just links that session to a person
+   via the pin_login/pin_signup RPCs. S.me is the resolved person, independent of S.session. */
+const PIN_RE = /^[0-9]{4}$/;
+async function ensureAnon(){
+  const { data } = await sb.auth.getSession();
+  if (data.session) return data.session;
+  const { data: d2, error } = await sb.auth.signInAnonymously();
+  if (error) throw error;
+  return d2.session;
+}
 
 const cur = () => (S.G ? S.G.currency : "₹");
 const fmt = m => fmtM(m, cur());
 const fmtWhole = m => fmtW(m, cur());
-const uid = () => (S.session && S.session.user ? S.session.user.id : null);
+const myId = () => (S.me ? S.me.id : null);
 const who = id => (S.G && id === S.G.me ? "You" : mname(S.G, id));
 
-function myName(){
-  const u = S.session && S.session.user;
-  if (!u) return "";
-  return ((u.user_metadata && u.user_metadata.name) || (u.email || "").split("@")[0] || "Me").trim();
-}
+function myName(){ return S.me ? S.me.name : ""; }
+function myPin(){ return S.me ? S.me.pin : ""; }
 function nice(e){
   const m = (e && e.message) || String(e);
   if (e && e.code === "23505") return "Someone in this group already has that name.";
   if (e && e.code === "23503") return "That person is part of an expense or payment, so they can't be removed.";
   if (/Failed to fetch|NetworkError|Load failed|network/i.test(m)) return "Can't reach the server. Check your connection and try again.";
-  if (/Invalid login credentials/i.test(m)) return "The email or password is wrong.";
   if (/rate limit/i.test(m)) return "Too many tries. Wait a few minutes and try again.";
   return m;
 }
@@ -67,9 +75,9 @@ function renderSetup(){
 }
 
 function renderAuth(){
-  const m = S.authMode, up = m === "up", reset = m === "reset";
+  const up = S.authMode === "up";
   const joining = /^#\/join\//.test(location.hash);
-  const formTitle = up ? "Create account" : reset ? "Reset password" : "Sign in";
+  const formTitle = up ? "Create account" : "Sign in";
   const lede = joining ? "You were invited to a group. " + (up ? "Create an account" : "Sign in") + " to join it." : "Split costs with friends. Everyone in a group sees the same ledger, live.";
   app.innerHTML = header() +
     '<div class="statusbar"><span class="dot" aria-hidden="true"></span>LIVE · REALTIME LEDGER</div>' +
@@ -80,13 +88,11 @@ function renderAuth(){
         '<form class="paper" id="authForm" novalidate style="margin-top:18px">' +
           '<p class="kicker">Account</p><h2>' + formTitle + '</h2><div class="stack">' +
           (up ? '<label>Your name<input id="aName" autocomplete="name" maxlength="40"></label>' : "") +
-          '<label>Email<input id="aEmail" type="email" autocomplete="email" inputmode="email" autocapitalize="none"></label>' +
-          (reset ? "" : '<label>Password' + (up ? " (8 or more characters)" : "") + '<input id="aPass" type="password" autocomplete="' + (up ? "new-password" : "current-password") + '"></label>') +
-          '</div><div class="msg" id="aMsg" role="alert"></div><div class="actions"><button class="primary" type="submit">' + (up ? "Create account" : reset ? "Send reset link" : "Sign in") + "</button></div>" +
-          '<div class="links">' +
-          (m === "in" ? '<button type="button" class="linkbtn" data-act="mode" data-mode="up">New here? Create an account</button><button type="button" class="linkbtn" data-act="mode" data-mode="reset">Forgot password</button>' :
-            '<button type="button" class="linkbtn" data-act="mode" data-mode="in">' + (up ? "Already have an account? Sign in" : "Back to sign in") + "</button>") +
-          "</div></form>" +
+          '<label>' + (up ? "Choose a 4-digit PIN" : "Your 4-digit PIN") + '<input id="aPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="••••"></label>' +
+          '</div><div class="msg" id="aMsg" role="alert"></div><div class="actions"><button class="primary" type="submit">' + (up ? "Create account" : "Sign in") + "</button></div>" +
+          (up ? '<p class="note" style="margin-top:10px">Keep your PIN somewhere safe — there\'s no recovery if you lose it.</p>' : "") +
+          '<div class="links"><button type="button" class="linkbtn" data-act="mode" data-mode="' + (up ? "in" : "up") + '">' + (up ? "Already have an account? Sign in" : "New here? Create an account") + "</button></div>" +
+        "</form>" +
       "</div>" +
       '<div class="livepanel" aria-hidden="true">' +
         '<div class="lp-head"><span class="dot"></span>ledger.live — goa-trip</div>' +
@@ -108,42 +114,22 @@ function renderAuth(){
 function setMsg(sel, text, ok){ const el = $(sel); if (!el) return; el.textContent = text || ""; el.className = "msg" + (text ? (ok ? " ok" : " bad") : ""); }
 
 async function doAuth(){
-  const email = $("#aEmail").value.trim(), passEl = $("#aPass"), pass = passEl ? passEl.value : "";
-  const mode = S.authMode;
-  if (!/^\S+@\S+\.\S+$/.test(email)) return setMsg("#aMsg", "Enter a valid email address.");
-  const name = mode === "up" ? $("#aName").value.trim() : "";
-  if (mode === "up" && !name) return setMsg("#aMsg", "Enter your name.");
-  if (mode !== "reset" && !pass) return setMsg("#aMsg", "Enter your password.");
-  if (mode === "up" && pass.length < 8) return setMsg("#aMsg", "Use at least 8 characters for the password.");
+  const up = S.authMode === "up";
+  const pin = $("#aPin").value.trim();
+  if (!PIN_RE.test(pin)) return setMsg("#aMsg", "Enter a 4-digit PIN.");
+  const name = up ? $("#aName").value.trim() : "";
+  if (up && !name) return setMsg("#aMsg", "Enter your name.");
   const btn = $("#authForm button[type=submit]"); btn.disabled = true; setMsg("#aMsg", "");
   try {
-    if (mode === "reset"){
-      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
-      if (error) throw error;
-      setMsg("#aMsg", "If that email has an account, a reset link is on its way.", true);
-    } else if (mode === "up"){
-      const { data, error } = await sb.auth.signUp({ email, password: pass, options: { data: { name } } });
-      if (error) throw error;
-      if (!data.session){ S.authMode = "in"; renderAuth(); setMsg("#aMsg", "Account created. Check your email to confirm it, then sign in.", true); return; }
-    } else {
-      const { error } = await sb.auth.signInWithPassword({ email, password: pass });
-      if (error) throw error;
-    }
+    await ensureAnon();
+    const { data, error } = up
+      ? await sb.rpc("pin_signup", { p_pin: pin, p_name: name })
+      : await sb.rpc("pin_login", { p_pin: pin });
+    if (error) throw error;
+    S.me = Array.isArray(data) ? data[0] : data;
+    return route();
   } catch (e){ setMsg("#aMsg", nice(e)); }
   const b = $("#authForm button[type=submit]"); if (b) b.disabled = false;
-}
-
-function renderRecovery(){
-  app.innerHTML = header() + "<h1>Choose a new password</h1>" +
-    '<form class="paper" id="recForm" novalidate style="margin-top:22px"><div class="stack"><label>New password (8 or more characters)<input id="rPass" type="password" autocomplete="new-password"></label></div><div class="msg" id="rMsg" role="alert"></div><div class="actions"><button class="primary" type="submit">Save password</button></div></form>';
-  chrome.innerHTML = "";
-}
-async function doRecovery(){
-  const p = $("#rPass").value;
-  if (p.length < 8) return setMsg("#rMsg", "Use at least 8 characters.");
-  const { error } = await sb.auth.updateUser({ password: p });
-  if (error) return setMsg("#rMsg", nice(error));
-  S.recovery = false; toast("Password updated."); route();
 }
 
 /* ----- group list ----- */
@@ -161,7 +147,7 @@ function renderList(){
     (gs.length ? gs.map(g => '<article class="item"><button class="main" data-act="open" data-id="' + g.id + '"><span class="gicon" aria-hidden="true">' + esc(g.name.trim().charAt(0)) + '</span><span class="mid"><strong>' + esc(g.name) + "</strong><small>" + ((g.members && g.members[0] && g.members[0].count) || 0) + ' people</small></span><span class="amt" aria-hidden="true">›</span></button></article>').join("") :
       '<div class="empty"><strong>No groups yet.</strong>Create one for a trip, a flat or a dinner, or join one with an invite link.</div>') +
     '<div class="actions"><button class="primary" data-act="newgroup">New group</button></div></section>' +
-    '<section class="paper"><p class="kicker">Invited?</p><h2>Join a group</h2><p class="help">Paste the invite link or code you were sent.</p><form id="joinForm" class="actions" style="margin-top:0"><input id="joinCode" placeholder="Invite link or code" style="flex:1;min-width:180px" autocapitalize="none" autocomplete="off"><button type="submit">Join</button></form><div class="msg" id="joinMsg" role="alert"></div></section>';
+    '<section class="paper"><p class="kicker">Invited?</p><h2>Join a group</h2><p class="help">Paste the invite link, or type the 4-digit PIN you were sent.</p><form id="joinForm" class="actions" style="margin-top:0"><input id="joinCode" placeholder="Invite link or PIN" style="flex:1;min-width:180px" autocapitalize="none" autocomplete="off"><button type="submit">Join</button></form><div class="msg" id="joinMsg" role="alert"></div></section>';
   chrome.innerHTML = "";
 }
 
@@ -224,11 +210,11 @@ async function loadGroup(id){
     fetchAll(() => sb.from("expenses").select("*, expense_splits(member_id, amount_minor, input_value)").eq("group_id", id).order("created_at").order("id")),
     fetchAll(() => sb.from("payments").select("*").eq("group_id", id).order("created_at").order("id"))
   ]);
-  const me = mem.find(m => m.user_id === uid());
+  const me = mem.find(m => m.person_id === myId());
   if (!me) return null;
   return {
     id: gq.data.id, name: gq.data.name, currency: gq.data.currency, code: gq.data.invite_code, createdBy: gq.data.created_by, me: me.id,
-    members: mem.map(m => ({ id: m.id, name: m.name, user_id: m.user_id })),
+    members: mem.map(m => ({ id: m.id, name: m.name, person_id: m.person_id })),
     expenses: exp.map(r => ({
       id: r.id, desc: r.description, amount: Number(r.amount_minor), payer: r.paid_by, date: r.expense_date, type: r.split_type, ts: Date.parse(r.created_at) || 0,
       shares: Object.fromEntries(r.expense_splits.map(s => [s.member_id, Number(s.amount_minor)])),
@@ -318,17 +304,17 @@ function viewBalances(G, b){
 }
 function inviteLink(G){ return location.origin + location.pathname + "#/join/" + G.code; }
 function viewGroup(G){
-  const isOwner = G.createdBy === uid();
+  const isOwner = G.createdBy === myId();
   return '<section class="paper"><p class="kicker">Group</p><h2>Details</h2><div class="stack"><label>Group name<input id="gName" value="' + esc(G.name) + '" maxlength="60"></label><label>Currency symbol<input id="cur" value="' + esc(G.currency) + '" maxlength="4" style="max-width:120px"></label></div><div class="msg" id="gMsg" role="alert"></div></section>' +
-    '<section class="paper"><p class="kicker">Invite</p><h2>Add people with a link</h2><p class="help">Anyone with this link can join after signing in, and will see every expense. Share it only with people in the group.</p><div class="codebox"><span class="stamp">' + esc(G.code) + '</span></div><div class="actions"><button class="pill" data-act="invite">Share invite link</button><button data-act="copylink">Copy link</button></div><div class="actions"><button class="small" data-act="rotate">Make a new link</button></div><p class="note" style="margin:8px 0 0">A new link stops the old one from working. People already in the group stay.</p></section>' +
+    '<section class="paper"><p class="kicker">Invite</p><h2>Add people with a PIN</h2><p class="help">Anyone with this PIN can join after signing in, and will see every expense. Share it only with people in the group.</p><div class="codebox"><span class="stamp">' + esc(G.code) + '</span></div><div class="actions"><button class="pill" data-act="invite">Share invite link</button><button data-act="copylink">Copy link</button></div><div class="actions"><button class="small" data-act="rotate">Make a new PIN</button></div><p class="note" style="margin:8px 0 0">A new PIN stops the old one from working. People already in the group stay.</p></section>' +
     '<section class="paper"><p class="kicker">People</p><h2>Who shares costs</h2>' +
     G.members.map(m => {
-      const canRemove = !m.user_id && !involved(G, m.id) && G.members.length > 2;
-      return '<div class="person"><span>' + esc(m.name) + (m.id === G.me ? ' <em class="you">you</em>' : "") + "</span><small>" + (m.user_id ? "joined" : "not joined yet") + '</small><button class="rn" data-act="rename" data-id="' + m.id + '" aria-label="Rename ' + esc(m.name) + '">Rename</button>' + (canRemove ? '<button class="ghost small" data-act="rmmember" data-id="' + m.id + '" aria-label="Remove ' + esc(m.name) + '">Remove</button>' : "") + "</div>";
+      const canRemove = !m.person_id && !involved(G, m.id) && G.members.length > 2;
+      return '<div class="person"><span>' + esc(m.name) + (m.id === G.me ? ' <em class="you">you</em>' : "") + "</span><small>" + (m.person_id ? "joined" : "not joined yet") + '</small><button class="rn" data-act="rename" data-id="' + m.id + '" aria-label="Rename ' + esc(m.name) + '">Rename</button>' + (canRemove ? '<button class="ghost small" data-act="rmmember" data-id="' + m.id + '" aria-label="Remove ' + esc(m.name) + '">Remove</button>' : "") + "</div>";
     }).join("") +
     '<div class="actions"><input id="newMember" placeholder="Add a person" style="flex:1;min-width:150px" maxlength="40"><button data-act="addmember">Add</button></div><div class="msg" id="memMsg" role="alert"></div></section>' +
     '<section class="paper"><p class="kicker">Save</p><h2>Export to Excel</h2><p class="help">Expenses with each person\'s share, balances, settle-up and payments, in one workbook.</p><div class="actions" style="margin-top:0"><button class="primary" data-act="xlsx">Download Excel</button></div></section>' +
-    '<section class="paper"><p class="kicker">Account</p><h2>Signed in</h2><p class="help">' + esc((S.session.user.email) || "") + '</p><div class="actions" style="margin-top:0"><button data-act="signout">Sign out</button></div></section>' +
+    '<section class="paper"><p class="kicker">Account</p><h2>Your PIN</h2><p class="help">Use this 4-digit PIN to sign in on any device. Keep it to yourself — there\'s no recovery if you lose it.</p><div class="codebox"><span class="stamp">' + esc(myPin()) + '</span></div><div class="actions" style="margin-top:0"><button data-act="signout">Sign out</button></div></section>' +
     '<section class="paper"><p class="kicker">Careful</p><h2>Delete this group</h2>' + (isOwner ? '<p class="help">Removes the group, every expense and payment, for everyone. This can\'t be undone.</p><button class="danger" data-act="delgroup">Delete group</button>' : '<p class="help">Only the person who created the group can delete it.</p>') + "</section>";
 }
 
@@ -494,7 +480,12 @@ document.addEventListener("click", e => {
       case "retry": route(); break;
       case "home": if (location.hash) location.hash = ""; else route(); break;
       case "mode": S.authMode = t.dataset.mode; renderAuth(); break;
-      case "signout": { const { error } = await sb.auth.signOut(); if (error) throw error; break; }
+      case "signout": {
+        const { error } = await sb.auth.signOut(); if (error) throw error;
+        S.me = null; S.groups = []; S.authMode = "in"; leaveGroup();
+        route();
+        break;
+      }
       case "open": location.hash = "#/g/" + t.dataset.id; break;
       case "newgroup": openCreateGroup(); break;
       case "tab": S.tab = t.dataset.tab; renderGroup(); window.scrollTo(0, 0); break;
@@ -536,8 +527,8 @@ document.addEventListener("click", e => {
         if (navigator.clipboard){ try { await navigator.clipboard.writeText(inviteLink(G)); toast("Invite link copied."); break; } catch (e2){} }
         showText("Invite link", inviteLink(G)); break;
       case "rotate":
-        if (!confirm("Make a new invite link? The old link will stop working.")) break;
-        { const { error } = await sb.rpc("rotate_invite_code", { p_group: G.id }); if (error) throw error; await refresh(); toast("New invite link ready."); }
+        if (!confirm("Make a new PIN? The old one will stop working.")) break;
+        { const { error } = await sb.rpc("rotate_invite_code", { p_group: G.id }); if (error) throw error; await refresh(); toast("New PIN ready."); }
         break;
       case "rename": openRename(t.dataset.id); break;
       case "addmember": {
@@ -546,7 +537,7 @@ document.addEventListener("click", e => {
         if (G.members.some(m => m.name.toLowerCase() === name.toLowerCase())) return setMsg("#memMsg", name + " is already in this group.");
         const { error } = await sb.from("members").insert({ group_id: G.id, name });
         if (error) return setMsg("#memMsg", nice(error));
-        await refresh(); toast(name + " added. Share the invite link so they can join.");
+        await refresh(); toast(name + " added. Share the invite link or PIN so they can join.");
         break;
       }
       case "rmmember": { const { error } = await sb.from("members").delete().eq("id", t.dataset.id); if (error) throw error; await refresh(); break; }
@@ -563,11 +554,10 @@ document.addEventListener("click", e => {
 document.addEventListener("submit", e => {
   const id = e.target.id;
   if (id === "authForm"){ e.preventDefault(); doAuth(); }
-  else if (id === "recForm"){ e.preventDefault(); doRecovery(); }
   else if (id === "joinGo"){ e.preventDefault(); doJoin(); }
   else if (id === "joinForm"){
     e.preventDefault();
-    const raw = $("#joinCode").value.trim(); if (!raw) return setMsg("#joinMsg", "Paste the invite link or code.");
+    const raw = $("#joinCode").value.trim(); if (!raw) return setMsg("#joinMsg", "Paste the invite link, or type the PIN.");
     const code = decodeURIComponent(raw.split("/").pop().split("#").pop()).trim();
     location.hash = "#/join/" + encodeURIComponent(code);
   }
@@ -600,8 +590,7 @@ async function route(){
   closeDlg();
   if (!configured) return renderSetup();
   if (S.boot) return renderLoading();
-  if (!S.session){ leaveGroup(); S.view = "auth"; return renderAuth(); }
-  if (S.recovery){ S.view = "recovery"; return renderRecovery(); }
+  if (!S.me){ leaveGroup(); S.view = "auth"; return renderAuth(); }
   const { a, b } = parseHash();
   try {
     if (a === "join" && b){ leaveGroup(); return await showJoin(b); }
@@ -615,13 +604,16 @@ else {
   renderLoading();
   window.addEventListener("hashchange", route);
   sb.auth.onAuthStateChange((event, session) => {
-    const prev = S.session; S.session = session;
-    if (event === "PASSWORD_RECOVERY") S.recovery = true;
     if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED") return;
-    if (event === "SIGNED_IN" && !S.boot && prev && session && prev.user.id === session.user.id) return;
-    if (event === "SIGNED_OUT"){ leaveGroup(); S.groups = []; S.recovery = false; S.authMode = "in"; }
-    S.boot = false;
-    setTimeout(route, 0);
+    S.session = session;
   });
-  sb.auth.getSession().then(({ data }) => { if (S.boot){ S.session = data.session; S.boot = false; route(); } });
+  (async () => {
+    try {
+      S.session = await ensureAnon();
+      const { data, error } = await sb.rpc("whoami");
+      if (!error && Array.isArray(data) && data.length) S.me = data[0];
+    } catch (e) {}
+    S.boot = false;
+    route();
+  })();
 }

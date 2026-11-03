@@ -1,3 +1,6 @@
 password.txt
 *.env
 .env*
+
+.vercel
+.env*

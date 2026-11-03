@@ -2,7 +2,8 @@
 
 A Splitwise-style app for splitting costs with friends. Everyone in a group sees the same ledger, and changes show up on other phones within a second or two.
 
-- Groups with invite links. People can be added by name first and claim that name when they join.
+- No accounts, no email. Each person signs in with a 4-digit PIN they pick, from any device.
+- Groups with invite links or a short PIN people can be added by name first and claim that name when they join.
 - Four ways to split: equal, exact amounts, percentages, shares. Every split adds up to the exact amount.
 - Balances, the fewest payments to settle up, and "Record" to log a payment in one tap.
 - Excel export (expenses with each person's share, balances, settle-up, payments).
@@ -29,7 +30,7 @@ This app has its own Supabase project. Do not connect it to the DSR project.
 
 2. **Create the tables.** In the project, open **SQL Editor > New query**, paste all of `supabase/schema.sql`, and press **Run**. It should finish with "Success". Run it only once on a fresh project.
 
-3. **Turn off email confirmation.** Open **Authentication > Sign In / Providers > Email** and switch **Confirm email** off. Reason: Supabase's built-in email service only sends to people on your own Supabase team, so friends would never get the confirmation email and could not sign up. (If you later set up your own email sending under **Authentication > SMTP Settings**, you can switch confirmation back on.)
+3. **Turn on anonymous sign-ins.** Open **Authentication > Sign In / Providers > Anonymous** and switch **Enable anonymous sign-ins** on. There's no email anywhere in this app — every device gets a silent, email-less session, and a 4-digit PIN (handled entirely in `schema.sql`) is what actually identifies a person. You do not need the Email provider enabled at all.
 
 4. **Set the site address.** Open **Authentication > URL Configuration**. Set **Site URL** to where the app will live (your Vercel address once deployed, or `http://localhost:3000` while testing) and add the same address under **Redirect URLs**.
 
@@ -49,7 +50,7 @@ This app has its own Supabase project. Do not connect it to the DSR project.
 
 ## Using it
 
-1. Open the app, create an account, and tap **New group**. Add the other people by name.
+1. Open the app, choose a 4-digit PIN, and tap **New group**. Add the other people by name.
 2. In the group, open the **Group** tab and tap **Share invite link**. Send it on WhatsApp.
 3. When a friend opens the link, they sign in and pick the name you gave them (or join as someone new).
 4. Anyone can add expenses. **Balances** shows who owes whom, and **Record** logs a payment.
@@ -63,7 +64,7 @@ This app has its own Supabase project. Do not connect it to the DSR project.
 
 ## Things to know
 
-- **Forgot password** sends an email, so it only works once you have set up your own email sending (step 3). Until then, reset a password from the Supabase dashboard under **Authentication > Users**.
+- **There's no password reset.** A PIN is the whole credential — if someone loses theirs, there's no recovery. They'd need a new PIN and to re-join their groups via invite link/PIN.
 - **Free Supabase projects pause** after a period of no use. Open the dashboard and press **Restore** if the app stops responding after a quiet spell.
 - **Back up your data.** Use **Download Excel** on the Group tab every so often, and check which backup options your Supabase plan includes.
 - A group can hold thousands of expenses. Everything loads when a group is opened, so very large groups will open more slowly.
@@ -71,4 +72,4 @@ This app has its own Supabase project. Do not connect it to the DSR project.
 ## Tests
 
 - `npm test` runs the maths tests (splits, balances, settle-up). It needs Node 20 or newer.
-- `supabase/tests/` has database tests that try to break the security rules (outsiders, cheating the split, claiming names, deleting groups). To run them you need a scratch PostgreSQL 15 or newer: create an empty database, run `pg_setup.sql` (a small stand-in for Supabase's login tables), then `schema.sql`, then `rls_test.sql`. Every line should say PASS.
+- `supabase/tests/` has database tests that try to break the security rules (outsiders, cheating the split, claiming names, deleting groups). To run them you need a scratch PostgreSQL 15 or newer: create an empty database, run `pg_setup.sql` (a small stand-in for Supabase's login tables), then `schema.sql`, then `rls_test.sql`. Every line should say PASS. **Note:** `rls_test.sql` predates the PIN sign-in system (it simulates signed-in users directly, not through `person_devices`) and needs updating to match — it will fail as-is until that's done.

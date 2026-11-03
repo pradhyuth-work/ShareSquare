@@ -10,6 +10,11 @@
 --    the split adds up to the expense amount, so a client can never store a broken split.
 --  * People can be added to a group before they have an account ("placeholder" members).
 --    When they open an invite link they claim their name, and their account is linked to it.
+--  * There are no accounts, no email and no passwords. Each person is identified by a 4-digit
+--    PIN (public.people). Supabase Auth is still used underneath, but only for its anonymous
+--    sign-in: every device gets its own silent, email-less auth session (auth.uid()), and
+--    public.person_devices links that device to a person once they sign in with their PIN.
+--    That indirection is what lets the same PIN work from more than one device at once.
 
 -- ---------------------------------------------------------------- tables
 --
@@ -17,26 +22,70 @@
 -- checked when the whole request finishes. That lets deleting a group remove its people and its
 -- expenses together, while removing one person who is still in an expense is still refused.
 
+create table public.people (
+  id         uuid primary key default gen_random_uuid(),
+  pin        text not null unique check (pin ~ '^[0-9]{4}$'),
+  name       text not null check (char_length(trim(name)) between 1 and 40),
+  created_at timestamptz not null default now()
+);
+
+-- Which anonymous Supabase Auth session (one per device/browser) is currently signed in as whom.
+-- A person can be linked from several devices at once; each device links to exactly one person.
+create table public.person_devices (
+  auth_user_id uuid primary key references auth.users (id) on delete cascade,
+  person_id    uuid not null references public.people (id) on delete cascade,
+  created_at   timestamptz not null default now()
+);
+create index person_devices_person_idx on public.person_devices (person_id);
+
+-- The signed-in person for the current request, resolved from the device's anonymous session.
+create or replace function public.my_person_id()
+returns uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select person_id from public.person_devices where auth_user_id = auth.uid();
+$$;
+
+-- A short, numeric PIN people can type (or get via an invite link) to join a group.
+-- Only 10,000 possible values, so it's generated with a collision check rather than a bare default.
+create or replace function public.gen_group_pin()
+returns text
+language plpgsql
+as $$
+declare
+  c text;
+begin
+  loop
+    c := lpad(floor(random() * 10000)::int::text, 4, '0');
+    exit when not exists (select 1 from public.groups where invite_code = c);
+  end loop;
+  return c;
+end;
+$$;
+
 create table public.groups (
   id          uuid primary key default gen_random_uuid(),
   name        text not null check (char_length(trim(name)) between 1 and 60),
   currency    text not null default '₹' check (char_length(currency) between 1 and 4),
-  invite_code text not null unique default substr(replace(gen_random_uuid()::text, '-', ''), 1, 10),
-  created_by  uuid not null default auth.uid() references auth.users (id),
+  invite_code text not null unique default public.gen_group_pin(),
+  created_by  uuid not null default public.my_person_id() references public.people (id),
   created_at  timestamptz not null default now()
 );
 
 create table public.members (
   id         uuid primary key default gen_random_uuid(),
   group_id   uuid not null references public.groups (id) on delete cascade,
-  user_id    uuid references auth.users (id) on delete set null,
+  person_id  uuid references public.people (id) on delete set null,
   name       text not null check (char_length(trim(name)) between 1 and 40),
   created_at timestamptz not null default now(),
   unique (id, group_id)
 );
-create unique index members_one_account_per_group on public.members (group_id, user_id) where user_id is not null;
+create unique index members_one_account_per_group on public.members (group_id, person_id) where person_id is not null;
 create unique index members_unique_name_per_group  on public.members (group_id, lower(name));
-create index members_user_idx on public.members (user_id);
+create index members_person_idx on public.members (person_id);
 
 create table public.expenses (
   id           uuid primary key default gen_random_uuid(),
@@ -46,7 +95,7 @@ create table public.expenses (
   paid_by      uuid not null,
   expense_date date not null default current_date,
   split_type   text not null check (split_type in ('equal', 'exact', 'percent', 'shares')),
-  created_by   uuid not null default auth.uid() references auth.users (id),
+  created_by   uuid not null default public.my_person_id() references public.people (id),
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
   unique (id, group_id),
@@ -73,7 +122,7 @@ create table public.payments (
   to_member    uuid not null,
   amount_minor bigint not null check (amount_minor > 0),
   payment_date date not null default current_date,
-  created_by   uuid not null default auth.uid() references auth.users (id),
+  created_by   uuid not null default public.my_person_id() references public.people (id),
   created_at   timestamptz not null default now(),
   check (from_member <> to_member),
   foreign key (from_member, group_id) references public.members (id, group_id) deferrable initially deferred,
@@ -91,14 +140,14 @@ stable
 set search_path = public
 as $$
   select exists (
-    select 1 from public.members m where m.group_id = gid and m.user_id = auth.uid()
+    select 1 from public.members m where m.group_id = gid and m.person_id = public.my_person_id()
   );
 $$;
 
 -- ---------------------------------------------------------------- privileges
 -- Start from nothing, then grant only what the app needs.
 
-revoke all on public.groups, public.members, public.expenses, public.expense_splits, public.payments
+revoke all on public.people, public.person_devices, public.groups, public.members, public.expenses, public.expense_splits, public.payments
   from anon, authenticated;
 
 grant select on public.groups, public.members, public.expenses, public.expense_splits, public.payments to authenticated;
@@ -113,27 +162,32 @@ grant delete                                           on public.payments to aut
 
 -- ---------------------------------------------------------------- row-level security
 
+alter table public.people         enable row level security;
+alter table public.person_devices enable row level security;
 alter table public.groups         enable row level security;
 alter table public.members        enable row level security;
 alter table public.expenses       enable row level security;
 alter table public.expense_splits enable row level security;
 alter table public.payments       enable row level security;
 
+-- people and person_devices have no policies at all: nothing is granted on them directly,
+-- so they're reachable only through the security-definer functions below.
+
 create policy groups_select on public.groups for select to authenticated
   using (public.is_group_member(id));
 create policy groups_update on public.groups for update to authenticated
   using (public.is_group_member(id)) with check (public.is_group_member(id));
 create policy groups_delete on public.groups for delete to authenticated
-  using (created_by = auth.uid());
+  using (created_by = public.my_person_id());
 
 create policy members_select on public.members for select to authenticated
   using (public.is_group_member(group_id));
 create policy members_insert on public.members for insert to authenticated
-  with check (public.is_group_member(group_id) and user_id is null);
+  with check (public.is_group_member(group_id) and person_id is null);
 create policy members_update on public.members for update to authenticated
   using (public.is_group_member(group_id)) with check (public.is_group_member(group_id));
 create policy members_delete on public.members for delete to authenticated
-  using (public.is_group_member(group_id) and user_id is null);
+  using (public.is_group_member(group_id) and person_id is null);
 
 create policy expenses_select on public.expenses for select to authenticated
   using (public.is_group_member(group_id));
@@ -150,6 +204,71 @@ create policy payments_insert on public.payments for insert to authenticated
 create policy payments_delete on public.payments for delete to authenticated
   using (public.is_group_member(group_id));
 
+-- ---------------------------------------------------------------- PIN sign-in
+
+-- Pick a new 4-digit PIN and a name. The caller must already have an anonymous Supabase Auth
+-- session (the client signs in anonymously before this is ever called).
+create or replace function public.pin_signup(p_pin text, p_name text)
+returns table(id uuid, name text, pin text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_id uuid;
+begin
+  if auth.uid() is null then raise exception 'No session.'; end if;
+  if p_pin !~ '^[0-9]{4}$' then raise exception 'PIN must be 4 digits.'; end if;
+  if coalesce(trim(p_name), '') = '' then raise exception 'Enter your name.'; end if;
+
+  begin
+    insert into public.people (pin, name) values (p_pin, trim(p_name)) returning people.id into new_id;
+  exception when unique_violation then
+    raise exception 'That PIN is taken. Choose a different one.';
+  end;
+
+  insert into public.person_devices (auth_user_id, person_id) values (auth.uid(), new_id)
+    on conflict (auth_user_id) do update set person_id = excluded.person_id;
+
+  return query select new_id, trim(p_name), p_pin;
+end;
+$$;
+
+-- Sign the current device in as whoever owns that PIN.
+create or replace function public.pin_login(p_pin text)
+returns table(id uuid, name text, pin text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  p public.people;
+begin
+  if auth.uid() is null then raise exception 'No session.'; end if;
+  select * into p from public.people where people.pin = p_pin;
+  if not found then raise exception 'That PIN doesn''t match an account.'; end if;
+
+  insert into public.person_devices (auth_user_id, person_id) values (auth.uid(), p.id)
+    on conflict (auth_user_id) do update set person_id = excluded.person_id;
+
+  return query select p.id, p.name, p.pin;
+end;
+$$;
+
+-- Who is signed in on this device, if anyone.
+create or replace function public.whoami()
+returns table(id uuid, name text, pin text)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select p.id, p.name, p.pin
+  from public.people p
+  join public.person_devices pd on pd.person_id = p.id
+  where pd.auth_user_id = auth.uid();
+$$;
+
 -- ---------------------------------------------------------------- functions the app calls
 
 -- Create a group, add yourself, and add the other people by name. All in one step.
@@ -160,19 +279,19 @@ security definer
 set search_path = public
 as $$
 declare
-  uid uuid := auth.uid();
+  pid uuid := public.my_person_id();
   gid uuid;
   v   text;
 begin
-  if uid is null then raise exception 'Sign in first.'; end if;
+  if pid is null then raise exception 'Sign in first.'; end if;
   if coalesce(trim(p_name), '') = '' then raise exception 'Give the group a name.'; end if;
   if coalesce(trim(p_my_name), '') = '' then raise exception 'Enter your name.'; end if;
 
   insert into public.groups (name, currency, created_by)
-  values (trim(p_name), coalesce(nullif(trim(p_currency), ''), '₹'), uid)
+  values (trim(p_name), coalesce(nullif(trim(p_currency), ''), '₹'), pid)
   returning id into gid;
 
-  insert into public.members (group_id, user_id, name) values (gid, uid, trim(p_my_name));
+  insert into public.members (group_id, person_id, name) values (gid, pid, trim(p_my_name));
 
   foreach v in array coalesce(p_others, '{}'::text[]) loop
     v := trim(v);
@@ -193,18 +312,19 @@ security definer
 set search_path = public
 as $$
 declare
-  g public.groups;
+  g   public.groups;
+  pid uuid := public.my_person_id();
 begin
-  if auth.uid() is null then raise exception 'Sign in first.'; end if;
+  if pid is null then raise exception 'Sign in first.'; end if;
   select * into g from public.groups where invite_code = lower(trim(p_code));
   if not found then return null; end if;
   return jsonb_build_object(
     'group_id', g.id,
     'name', g.name,
-    'already_member', exists (select 1 from public.members where group_id = g.id and user_id = auth.uid()),
+    'already_member', exists (select 1 from public.members where group_id = g.id and person_id = pid),
     'free', coalesce((
       select jsonb_agg(jsonb_build_object('id', m.id, 'name', m.name) order by m.name)
-      from public.members m where m.group_id = g.id and m.user_id is null
+      from public.members m where m.group_id = g.id and m.person_id is null
     ), '[]'::jsonb)
   );
 end;
@@ -218,27 +338,27 @@ security definer
 set search_path = public
 as $$
 declare
-  uid uuid := auth.uid();
+  pid uuid := public.my_person_id();
   g   public.groups;
   mid uuid;
 begin
-  if uid is null then raise exception 'Sign in first.'; end if;
+  if pid is null then raise exception 'Sign in first.'; end if;
   select * into g from public.groups where invite_code = lower(trim(p_code));
   if not found then raise exception 'That invite code does not match any group.'; end if;
 
-  if exists (select 1 from public.members where group_id = g.id and user_id = uid) then
+  if exists (select 1 from public.members where group_id = g.id and person_id = pid) then
     return g.id;
   end if;
 
   if p_member is not null then
-    update public.members set user_id = uid
-     where id = p_member and group_id = g.id and user_id is null
+    update public.members set person_id = pid
+     where id = p_member and group_id = g.id and person_id is null
     returning id into mid;
     if mid is null then raise exception 'Someone else already took that name.'; end if;
   else
     if coalesce(trim(p_name), '') = '' then raise exception 'Enter your name.'; end if;
     begin
-      insert into public.members (group_id, user_id, name) values (g.id, uid, trim(p_name));
+      insert into public.members (group_id, person_id, name) values (g.id, pid, trim(p_name));
     exception when unique_violation then
       raise exception 'Someone in the group already uses that name. Pick it from the list or use a different name.';
     end;
@@ -256,7 +376,7 @@ security definer
 set search_path = public
 as $$
 declare
-  c text := substr(replace(gen_random_uuid()::text, '-', ''), 1, 10);
+  c text := public.gen_group_pin();
 begin
   if not public.is_group_member(p_group) then raise exception 'You are not in this group.'; end if;
   update public.groups set invite_code = c where id = p_group;
@@ -312,7 +432,7 @@ begin
 
   if p_id is null then
     insert into public.expenses (group_id, description, amount_minor, paid_by, expense_date, split_type, created_by)
-    values (p_group, trim(p_desc), p_amount, p_paid_by, p_date, p_type, auth.uid())
+    values (p_group, trim(p_desc), p_amount, p_paid_by, p_date, p_type, public.my_person_id())
     returning id into eid;
   else
     update public.expenses
@@ -345,6 +465,12 @@ grant execute on function public.join_group(text, uuid, text)                   
 grant execute on function public.rotate_invite_code(uuid)                          to authenticated;
 grant execute on function public.save_expense(uuid, uuid, text, bigint, uuid, date, text, jsonb) to authenticated;
 grant execute on function public.is_group_member(uuid)                             to authenticated;
+
+-- pin_signup / pin_login / whoami run before the caller has a "person" at all, so they're the
+-- only functions open to anon too (an anonymous Supabase Auth session is still required inside).
+grant execute on function public.pin_signup(text, text) to anon, authenticated;
+grant execute on function public.pin_login(text)         to anon, authenticated;
+grant execute on function public.whoami()                to anon, authenticated;
 
 -- ---------------------------------------------------------------- live updates
 
