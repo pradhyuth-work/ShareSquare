@@ -21,6 +21,7 @@ This app needs its own, dedicated Supabase project — don't point it at a Supab
 | `js/xlsx.js` | Builds the Excel file in the browser |
 | `js/client.js`, `js/config.js` | Supabase connection. **You edit `config.js`.** |
 | `supabase/schema.sql` | Tables, security rules and functions. Run once. |
+| `supabase/migrations/` | Small SQL updates for projects that already ran `schema.sql`. Run each file once, in order. |
 | `supabase/tests/` | Database tests (optional, see the end) |
 | `tests/math.test.mjs` | Maths tests. Run with `npm test`. |
 

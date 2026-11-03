@@ -213,7 +213,7 @@ async function loadGroup(id){
   const me = mem.find(m => m.person_id === myId());
   if (!me) return null;
   return {
-    id: gq.data.id, name: gq.data.name, currency: gq.data.currency, code: gq.data.invite_code, createdBy: gq.data.created_by, me: me.id,
+    id: gq.data.id, name: gq.data.name, currency: gq.data.currency, code: gq.data.invite_code, simplifyShared: "simplify_debts" in gq.data, simplify: gq.data.simplify_debts !== false, createdBy: gq.data.created_by, me: me.id,
     members: mem.map(m => ({ id: m.id, name: m.name, person_id: m.person_id })),
     expenses: exp.map(r => ({
       id: r.id, desc: r.description, amount: Number(r.amount_minor), payer: r.paid_by, date: r.expense_date, type: r.split_type, ts: Date.parse(r.created_at) || 0,
@@ -286,8 +286,10 @@ function viewExpenses(G){
   }
   return h + "</section>";
 }
-function simplifyOn(G){ try { return localStorage.getItem("ss_simplify_" + G.id) !== "0"; } catch (e) { return true; } }
-function setSimplify(G, on){ try { localStorage.setItem("ss_simplify_" + G.id, on ? "1" : "0"); } catch (e) {} }
+function simplifyOn(G){
+  if (G.simplifyShared) return G.simplify;
+  try { return localStorage.getItem("ss_simplify_" + G.id) !== "0"; } catch (e) { return true; }
+}
 function viewBalances(G, b){
   let h = '<section class="paper"><p class="kicker">Balances</p><h2>Who is owed what</h2>';
   h += G.members.map(m => {
@@ -523,7 +525,14 @@ document.addEventListener("click", e => {
         await refresh(); toast(who(s.from) + " paid " + who(s.to) + " " + fmt(s.amount) + ".");
         break;
       }
-      case "simplify": setSimplify(G, !simplifyOn(G)); renderGroup(); break;
+      case "simplify": {
+        const on = !simplifyOn(G);
+        if (!G.simplifyShared){ try { localStorage.setItem("ss_simplify_" + G.id, on ? "1" : "0"); } catch (e) {} renderGroup(); break; }
+        G.simplify = on; renderGroup();
+        const { error } = await sb.from("groups").update({ simplify_debts: on }).eq("id", G.id);
+        if (error){ G.simplify = !on; renderGroup(); throw error; }
+        break;
+      }
       case "pay": openPayDialog(null); break;
       case "share": await shareOrCopy(G.name, summaryText(G)); break;
       case "invite": await shareOrCopy("Join " + G.name, 'Join "' + G.name + '" on ShareSquare so we can split costs:', inviteLink(G)); break;

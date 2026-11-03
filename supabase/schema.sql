@@ -72,7 +72,8 @@ create table public.groups (
   currency    text not null default '₹' check (char_length(currency) between 1 and 4),
   invite_code text not null unique default public.gen_group_pin(),
   created_by  uuid not null default public.my_person_id() references public.people (id),
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  simplify_debts boolean not null default true
 );
 
 create table public.members (
