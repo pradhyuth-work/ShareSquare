@@ -3,7 +3,7 @@
 A Splitwise-style app for splitting costs with friends. Everyone in a group sees the same ledger, and changes show up on other phones within a second or two.
 
 - No accounts, no email. Each person signs in with a 4-digit PIN they pick, from any device.
-- Groups with invite links or a short PIN people can be added by name first and claim that name when they join.
+- Groups with invite links or a short PIN. People can be added by name first and claim that name when they join.
 - Four ways to split: equal, exact amounts, percentages, shares. Every split adds up to the exact amount.
 - Balances, the fewest payments to settle up, and "Record" to log a payment in one tap.
 - Excel export (expenses with each person's share, balances, settle-up, payments).
@@ -46,7 +46,7 @@ This app needs its own, dedicated Supabase project — don't point it at a Supab
 
    Then open http://localhost:3000. Double-clicking `index.html` will not work, because browsers block the app's scripts when a page is opened as a plain file.
 
-7. **Put it online (Vercel).** Run `npx vercel` in this folder. When asked, choose no framework and keep the output folder as `.`. Or push the folder to GitHub and import it in Vercel. Then put the Vercel address into Supabase as the **Site URL** (step 4).
+7. **Put it online (Vercel).** Push this repo to GitHub and import it in Vercel (choose no framework, output folder `.`), or run `npx vercel` in this folder. Once the Vercel project is connected to the GitHub repo (**Project Settings > Git**), every push to `main` deploys automatically. Put the Vercel address into Supabase as the **Site URL** (step 4).
 
 ## Using it
 
