@@ -9,7 +9,7 @@ A Splitwise-style app for splitting costs with friends. Everyone in a group sees
 - Excel export (expenses with each person's share, balances, settle-up, payments).
 - Plain static files plus Supabase. No build step.
 
-This app has its own Supabase project. Do not connect it to the DSR project.
+This app needs its own, dedicated Supabase project — don't point it at a Supabase project used by another app.
 
 ## Files
 
@@ -26,7 +26,7 @@ This app has its own Supabase project. Do not connect it to the DSR project.
 
 ## Set it up
 
-1. **Create a Supabase project.** At supabase.com, make a new project (a new one, separate from the DSR). Pick the region closest to your users, for example Mumbai.
+1. **Create a Supabase project.** At supabase.com, make a new project, dedicated to this app. Pick the region closest to your users, for example Mumbai.
 
 2. **Create the tables.** In the project, open **SQL Editor > New query**, paste all of `supabase/schema.sql`, and press **Run**. It should finish with "Success". Run it only once on a fresh project.
 
