@@ -199,3 +199,26 @@
   .lp-num{color:var(--ink)}
   .lp-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-top:1px solid var(--rule);font:500 12px/1 var(--mono);color:var(--ink-soft)}
   .lp-foot .ok{color:var(--green);font-weight:600}
+
+  /* ---- scan a bill ---- */
+  .fab.fabs{display:flex;gap:10px;padding:0}
+  .fabs button{padding:12px 18px;font-size:14.5px;box-shadow:0 12px 28px -12px rgba(0,0,0,.8)}
+  .fabs button:not(.primary){background:var(--panel);color:var(--green);border-color:var(--green)}
+  .fabs button:not(.primary):hover{background:#12201a}
+  label.filebtn{display:flex;flex-direction:row;align-items:center;justify-content:center;min-height:52px;padding:12px 16px;border-radius:7px;border:1.5px solid var(--green);background:var(--green);color:#042012;font:700 15px/1 var(--sans);letter-spacing:0;text-align:center;cursor:pointer;transition:background .15s,border-color .15s}
+  label.filebtn:hover{background:var(--green-hi);border-color:var(--green-hi)}
+  label.filebtn:focus-within{outline:2px solid var(--green);outline-offset:2px}
+  .bitem{padding:10px 0;border-bottom:1px dashed var(--rule)}
+  .bitem:last-child{border-bottom:0}
+  .brow{display:grid;grid-template-columns:1fr 96px 40px;gap:8px;align-items:center}
+  .brow input{min-height:42px;padding:7px 9px;font-size:14px}
+  .brow .ba{text-align:right}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{min-height:34px;padding:6px 11px;font:500 13px/1 var(--mono);border-radius:999px;color:var(--ink-soft);background:transparent}
+  .chip[aria-pressed="true"]{background:rgba(57,255,142,.14);border-color:var(--green);color:var(--green)}
+  .chip.all{border-style:dashed}
+  .billsum{border:1px solid var(--rule);border-radius:8px;padding:6px 12px;background:var(--panel-2)}
+  .bsline{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed var(--rule);font:500 14px var(--mono)}
+  .bsline:last-child{border-bottom:0}
+  .bsline:first-child strong{color:var(--green)}
+  .billsum:empty{display:none}

@@ -1,6 +1,7 @@
 import { sb, configured } from "./client.js";
 import { MONTHS, fmt as fmtM, fmtWhole as fmtW, parseMoney, computeSplit, balances, settlements, involved, mname } from "./math.js";
 import { buildXlsx, groupSheets } from "./xlsx.js";
+import { parseReceipt, splitBill } from "./bill.js";
 
 /* ================= helpers ================= */
 const $ = s => document.querySelector(s);
@@ -263,14 +264,14 @@ function renderGroup(){
   h += '<div class="slips"><div class="slip"><div class="k">Total spent</div><div class="v">' + fmtWhole(total) + '</div></div><div class="slip"><div class="k">Expenses</div><div class="v">' + G.expenses.length + '</div></div><div class="slip hi' + (net === 0 ? ' txt' : '') + '"><div class="k">' + (net > 0 ? "You are owed" : net < 0 ? "You owe" : "Your balance") + '</div><div class="v">' + (net === 0 ? "Settled" : fmtWhole(Math.abs(net))) + "</div></div></div>";
   h += S.tab === "balances" ? viewBalances(G, b) : S.tab === "group" ? viewGroup(G) : viewExpenses(G);
   app.innerHTML = h;
-  chrome.innerHTML = (S.tab !== "group" ? '<button class="primary fab" data-act="add">+ Add expense</button>' : "") +
+  chrome.innerHTML = (S.tab !== "group" ? '<div class="fab fabs"><button data-act="scan">Scan bill</button><button class="primary" data-act="add">+ Add expense</button></div>' : "") +
     '<nav class="bar" aria-label="Sections"><div class="in">' +
     [["expenses", "Expenses"], ["balances", "Balances"], ["group", "Group"]].map(([k, l]) => '<button data-act="tab" data-tab="' + k + '"' + (S.tab === k ? ' aria-current="page"' : "") + ">" + l + "</button>").join("") + "</div></nav>";
 }
 function viewExpenses(G){
   const items = G.expenses.map(e => ({ k: "e", x: e })).concat(G.payments.map(p => ({ k: "p", x: p })));
   items.sort((a, b) => b.x.date.localeCompare(a.x.date) || b.x.ts - a.x.ts);
-  if (!items.length) return '<section class="paper"><div class="empty"><strong>No expenses yet.</strong>Tap “Add expense” when someone pays for the group. Invite the others from the Group tab.</div></section>';
+  if (!items.length) return '<section class="paper"><div class="empty"><strong>No expenses yet.</strong>Tap “Add expense” when someone pays for the group, or “Scan bill” to split a restaurant bill item by item. Invite the others from the Group tab.</div></section>';
   let h = '<section class="paper"><p class="kicker">Ledger</p>';
   for (const it of items){
     const x = it.x, open = S.openId === x.id;
@@ -435,6 +436,114 @@ async function rpcSave(x){
   if (error) throw error;
 }
 
+/* ----- scan a bill and split it item by item ----- */
+let B = null, bk = 0;
+
+function openScan(){
+  showDlg('<form id="scanForm" novalidate><h2>Scan a bill</h2><p class="help" style="margin:0">Take a photo of the bill, or pick one from your gallery. We read the items, then you tick who shared each one.</p>' +
+    '<label class="filebtn" id="scanPick">Take or choose a photo<input id="billFile" type="file" accept="image/*"></label>' +
+    '<div class="hint" id="scanHint" role="status">The photo is read on this device. It isn\'t uploaded anywhere.</div><div class="err" id="scanErr" role="alert"></div>' +
+    '<div class="actions" style="margin-top:0"><button type="button" data-act="close">Cancel</button><span class="spacer"></span><button type="button" data-act="billmanual">Enter items by hand</button></div></form>');
+  $("#billFile").onchange = ev => { const f = ev.target.files && ev.target.files[0]; if (f) scanFile(f); };
+}
+async function scanFile(file){
+  // If the dialog is closed, or replaced by another screen, while the photo is still being read, the result is dropped.
+  const form = $("#scanForm"), alive = () => dlg.open && $("#scanForm") === form, say = t => { if (alive()) $("#scanHint").textContent = t; };
+  $("#scanErr").textContent = ""; $("#scanPick").hidden = true; say("Getting ready…");
+  try {
+    const { readBill } = await import("./scan.js");
+    const text = await readBill(file, (status, p) => say(status === "recognizing text" ? "Reading the bill… " + Math.round(p * 100) + "%" : "Loading the scanner… the first time takes a moment."));
+    if (!alive()) return;
+    const r = parseReceipt(text);
+    openBill(r, r.items.length ? "" : "We couldn't pick out any items from that photo. Add them below, or go back and try a clearer, well-lit shot.");
+  } catch (e){
+    if (!alive()) return;
+    $("#scanPick").hidden = false; $("#scanHint").textContent = ""; $("#scanErr").textContent = nice(e);
+  }
+}
+function newBillItem(name, minor){
+  const who = {}; S.G.members.forEach(m => { who[m.id] = true; });
+  return { k: ++bk, n: name || "", a: minor ? (minor / 100).toFixed(2) : "", who };
+}
+const moneyStr = minor => minor ? (minor / 100).toFixed(2) : "";
+function openBill(r, note){
+  const G = S.G;
+  B = { desc: r.merchant || "Bill", date: r.date || today(), payer: G.me, scanned: r.total || 0, note: note || "",
+    items: r.items.map(i => newBillItem(i.name, i.amount)),
+    x: { tax: moneyStr(r.tax), service: moneyStr(r.service), discount: moneyStr(r.discount), round: moneyStr(r.round) } };
+  if (!B.items.length) B.items.push(newBillItem("", 0));
+  const xf = (k, label) => '<label>' + label + '<input data-bx="' + k + '" inputmode="decimal" placeholder="0.00" value="' + esc(B.x[k]) + '"></label>';
+  showDlg('<form id="bForm" novalidate><h2>Split a bill</h2><p class="help" style="margin:0">' + esc(B.note || "Check each item, then tap the names of the people who shared it. Scanned text can have mistakes, so fix anything that looks wrong.") + "</p>" +
+    '<label>What was it for<input id="bDesc" maxlength="80" value="' + esc(B.desc) + '"></label>' +
+    '<div class="two"><label>Date<input id="bDate" type="date" value="' + esc(B.date) + '"></label><label>Paid by<select id="bPayer">' + G.members.map(m => '<option value="' + m.id + '"' + (m.id === B.payer ? " selected" : "") + ">" + esc(m.name) + (m.id === G.me ? " (you)" : "") + "</option>").join("") + "</select></label></div>" +
+    '<div><div class="note" style="margin-bottom:4px">Items</div><div id="bItems"></div><div class="actions" style="margin-top:8px"><button type="button" class="small" data-act="bitem">+ Add item</button></div></div>' +
+    '<div><div class="note" style="margin-bottom:6px">Tax, tip and discounts (shared in proportion to what each person ordered)</div><div class="two">' + xf("tax", "Tax / GST") + xf("service", "Service charge / tip") + xf("discount", "Discount") + xf("round", "Round-off (+ or −)") + "</div></div>" +
+    '<div class="billsum" id="bSum" aria-live="polite"></div><div class="hint" id="bHint"></div><div class="err" id="bErr" role="alert"></div>' +
+    '<div class="actions" style="margin-top:0"><button type="button" data-act="close">Cancel</button><span class="spacer"></span><button class="primary" type="submit">Save expense</button></div></form>');
+  renderBillItems(); updateBill();
+  $("#bForm").addEventListener("input", ev => {
+    const t = ev.target;
+    if (t.dataset.bk){ const it = B.items.find(i => String(i.k) === t.dataset.bk); if (it) it[t.dataset.f] = t.value; }
+    else if (t.dataset.bx) B.x[t.dataset.bx] = t.value;
+    else if (t.id === "bDesc") B.desc = t.value;
+    else if (t.id === "bDate") B.date = t.value;
+    else if (t.id === "bPayer") B.payer = t.value;
+    updateBill();
+  });
+  $("#bForm").onsubmit = ev => { ev.preventDefault(); saveBill(); };
+}
+function renderBillItems(focusLast){
+  const G = S.G;
+  $("#bItems").innerHTML = B.items.map(it =>
+    '<div class="bitem" data-item="' + it.k + '"><div class="brow"><input class="bn" data-bk="' + it.k + '" data-f="n" aria-label="Item name" placeholder="Item" maxlength="60" value="' + esc(it.n) + '"><input class="ba" data-bk="' + it.k + '" data-f="a" inputmode="decimal" aria-label="Item amount" placeholder="0.00" value="' + esc(it.a) + '"><button type="button" class="ghost small" data-act="bdel" data-k="' + it.k + '" aria-label="Remove this item">✕</button></div>' +
+    '<div class="chips" role="group" aria-label="Who shared this item">' + G.members.map(m => '<button type="button" class="chip" data-act="bchip" data-k="' + it.k + '" data-m="' + m.id + '" aria-pressed="' + !!it.who[m.id] + '">' + esc(m.name) + "</button>").join("") +
+    '<button type="button" class="chip all" data-act="ball" data-k="' + it.k + '"></button></div></div>').join("");
+  B.items.forEach(syncChips);
+  if (focusLast){ const n = document.querySelectorAll("#bItems .bn"); if (n.length) n[n.length - 1].focus(); }
+}
+function syncChips(it){
+  const box = document.querySelector('.bitem[data-item="' + it.k + '"]'); if (!box) return;
+  box.querySelectorAll(".chip[data-m]").forEach(c => c.setAttribute("aria-pressed", String(!!it.who[c.dataset.m])));
+  const all = S.G.members.every(m => it.who[m.id]); box.querySelector(".chip.all").textContent = all ? "Nobody" : "Everyone";
+}
+function billCalc(){
+  const G = S.G, items = [], x = {}; let problem = "";
+  for (const it of B.items){
+    if (!it.n.trim() && !String(it.a).trim()) continue;
+    const a = parseMoney(it.a);
+    if (!(a > 0)){ problem = problem || "Enter an amount for " + (it.n.trim() ? "“" + it.n.trim() + "”" : "each item") + "."; continue; }
+    items.push({ name: it.n.trim() || "Item", amount: a, who: G.members.filter(m => it.who[m.id]).map(m => m.id) });
+  }
+  for (const [k, label] of [["tax", "tax"], ["service", "service charge or tip"], ["discount", "discount"], ["round", "round-off"]]){
+    const s = String(B.x[k] || "").trim(), v = s ? parseMoney(s) : 0;
+    if (isNaN(v) || (k !== "round" && v < 0)){ problem = problem || "Check the " + label + " amount."; x[k] = 0; } else x[k] = v;
+  }
+  return problem ? { error: problem } : splitBill(Object.assign({ items }, x), G.members.map(m => m.id));
+}
+function updateBill(){
+  const sum = $("#bSum"), hint = $("#bHint"); if (!sum || !B) return;
+  const r = billCalc(), G = S.G;
+  if (r.error){ sum.innerHTML = ""; hint.className = "hint"; hint.textContent = r.error; return; }
+  sum.innerHTML = '<div class="bsline"><span>Bill total</span><strong>' + fmt(r.total) + "</strong></div>" +
+    G.members.filter(m => r.shares[m.id] > 0).map(m => '<div class="bsline"><span>' + esc(m.name) + (m.id === G.me ? " (you)" : "") + "</span><span>" + fmt(r.shares[m.id]) + "</span></div>").join("");
+  if (B.scanned && B.scanned !== r.total){ hint.className = "hint bad"; hint.textContent = "The bill says " + fmt(B.scanned) + " but this adds up to " + fmt(r.total) + ". Check for a missing or misread item."; }
+  else if (B.scanned){ hint.className = "hint good"; hint.textContent = "Matches the total printed on the bill."; }
+  else { hint.className = "hint"; hint.textContent = ""; }
+}
+async function saveBill(){
+  const err = $("#bErr"); err.textContent = "";
+  const desc = B.desc.trim();
+  if (!desc){ err.textContent = "Say what the bill was for."; $("#bDesc").focus(); return; }
+  if (!B.date){ err.textContent = "Pick a date."; return; }
+  const r = billCalc(); if (r.error){ err.textContent = r.error; return; }
+  const btn = $("#bForm button[type=submit]"); btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    const splits = S.G.members.filter(m => r.shares[m.id] > 0).map(m => ({ member_id: m.id, amount_minor: r.shares[m.id], input_value: r.shares[m.id] }));
+    await rpcSave({ id: null, desc, amount: r.total, payer: B.payer, date: B.date, type: "exact", splits });
+    closeDlg(); B = null; await refresh(); toast("Bill added and split.");
+  } catch (e){ err.textContent = nice(e); btn.disabled = false; btn.textContent = "Save expense"; }
+}
+
 function openPayDialog(pre){
   const G = S.G, opts = sel => G.members.map(m => '<option value="' + m.id + '"' + (sel === m.id ? " selected" : "") + ">" + esc(m.name) + (m.id === G.me ? " (you)" : "") + "</option>").join("");
   showDlg('<form id="pForm" novalidate><h2>Record a payment</h2><p class="help" style="margin:0">Use this when someone pays another person back outside the app.</p>' +
@@ -495,6 +604,12 @@ document.addEventListener("click", e => {
       case "newgroup": openCreateGroup(); break;
       case "tab": S.tab = t.dataset.tab; renderGroup(); window.scrollTo(0, 0); break;
       case "add": openExpense(null); break;
+      case "scan": openScan(); break;
+      case "billmanual": openBill({ items: [] }, "Add each item from the bill, then tick who shared it."); break;
+      case "bitem": B.items.push(newBillItem("", 0)); renderBillItems(true); break;
+      case "bdel": B.items = B.items.filter(i => String(i.k) !== t.dataset.k); if (!B.items.length) B.items.push(newBillItem("", 0)); renderBillItems(); updateBill(); break;
+      case "bchip": { const it = B.items.find(i => String(i.k) === t.dataset.k); if (it){ it.who[t.dataset.m] = !it.who[t.dataset.m]; syncChips(it); updateBill(); } break; }
+      case "ball": { const it = B.items.find(i => String(i.k) === t.dataset.k); if (it){ const on = !G.members.every(m => it.who[m.id]); G.members.forEach(m => { it.who[m.id] = on; }); syncChips(it); updateBill(); } break; }
       case "edit": openExpense(t.dataset.id); break;
       case "toggle": S.openId = S.openId === t.dataset.id ? null : t.dataset.id; renderGroup(); break;
       case "del": {

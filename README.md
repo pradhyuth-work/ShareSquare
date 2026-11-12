@@ -5,6 +5,7 @@ A Splitwise-style app for splitting costs with friends. Everyone in a group sees
 - No accounts, no email. Each person signs in with a 4-digit PIN they pick, from any device.
 - Groups with invite links or a short PIN. People can be added by name first and claim that name when they join.
 - Four ways to split: equal, exact amounts, percentages, shares. Every split adds up to the exact amount.
+- **Scan a bill:** photograph a restaurant bill, check the items it finds, tick who shared each one, and the tax, tip and discount are shared in proportion to what each person ordered.
 - Balances, the fewest payments to settle up, and "Record" to log a payment in one tap.
 - Excel export (expenses with each person's share, balances, settle-up, payments).
 - Plain static files plus Supabase. No build step.
@@ -18,12 +19,14 @@ This app needs its own, dedicated Supabase project — don't point it at a Supab
 | `index.html`, `css/style.css` | The page and its look |
 | `js/app.js` | Screens and actions |
 | `js/math.js` | Splitting, balances and settle-up maths |
+| `js/bill.js` | Reads the text of a scanned bill into items, and splits a bill item by item |
+| `js/scan.js` | Reads a bill photo into text on the phone (loads only when someone taps **Scan bill**) |
 | `js/xlsx.js` | Builds the Excel file in the browser |
 | `js/client.js`, `js/config.js` | Supabase connection. **You edit `config.js`.** |
 | `supabase/schema.sql` | Tables, security rules and functions. Run once. |
 | `supabase/migrations/` | Small SQL updates for projects that already ran `schema.sql`. Run each file once, in order. |
 | `supabase/tests/` | Database tests (optional, see the end) |
-| `tests/math.test.mjs` | Maths tests. Run with `npm test`. |
+| `tests/math.test.mjs`, `tests/bill.test.mjs` | Maths and bill-reading tests. Run with `npm test`. |
 
 ## Set it up
 
@@ -56,6 +59,15 @@ This app needs its own, dedicated Supabase project — don't point it at a Supab
 3. When a friend opens the link, they sign in and pick the name you gave them (or join as someone new).
 4. Anyone can add expenses. **Balances** shows who owes whom, and **Record** logs a payment.
 
+## Scan a bill
+
+On the **Expenses** or **Balances** tab, tap **Scan bill**, then take a photo or pick one from the gallery. The items, tax, service charge and discount are read off the photo and shown for checking. Tap the names of the people who shared each item (everyone is ticked to start with). The expense is saved with each person's exact share, so it shows up like any other expense and can be edited later.
+
+- The photo is read on the phone and is never uploaded. The first scan downloads the Tesseract text reader (a few MB, from the jsDelivr CDN); after that the browser keeps it.
+- Reading is not perfect, especially on crumpled, dim or handwritten bills. That's why every item can be edited, and the app warns when the items don't add up to the total printed on the bill.
+- **Enter items by hand** skips the photo and gives the same item-by-item split.
+- An item shared by several people is split equally between them. Tax, tip and round-off are spread in proportion to each person's items; a discount is taken off the same way.
+
 ## Who can do what
 
 - Anyone in a group can add, edit and delete expenses and payments, and add or rename people. This matches how Splitwise groups work.
@@ -72,5 +84,5 @@ This app needs its own, dedicated Supabase project — don't point it at a Supab
 
 ## Tests
 
-- `npm test` runs the maths tests (splits, balances, settle-up). It needs Node 20 or newer.
+- `npm test` runs the maths tests (splits, balances, settle-up) and the bill-reading tests. It needs Node 20 or newer.
 - `supabase/tests/` has database tests that try to break the security rules (outsiders, cheating the split, claiming names, deleting groups). To run them you need a scratch PostgreSQL 15 or newer: create an empty database, run `pg_setup.sql` (a small stand-in for Supabase's login tables), then `schema.sql`, then `rls_test.sql`. Every line should say PASS. **Note:** `rls_test.sql` predates the PIN sign-in system (it simulates signed-in users directly, not through `person_devices`) and needs updating to match — it will fail as-is until that's done.
