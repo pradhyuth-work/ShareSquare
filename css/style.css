@@ -222,3 +222,5 @@
   .bsline:last-child{border-bottom:0}
   .bsline:first-child strong{color:var(--green)}
   .billsum:empty{display:none}
+  label.filebtn.alt{background:transparent;color:var(--green)}
+  label.filebtn.alt:hover{background:rgba(57,255,142,.1);border-color:var(--green)}

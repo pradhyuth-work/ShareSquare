@@ -441,10 +441,12 @@ let B = null, bk = 0;
 
 function openScan(){
   showDlg('<form id="scanForm" novalidate><h2>Scan a bill</h2><p class="help" style="margin:0">Take a photo of the bill, or pick one from your gallery. We read the items, then you tick who shared each one.</p>' +
-    '<label class="filebtn" id="scanPick">Take or choose a photo<input id="billFile" type="file" accept="image/*"></label>' +
+    '<div class="stack" id="scanPick"><label class="filebtn">Take a photo<input id="billCam" type="file" accept="image/*" capture="environment"></label>' +
+    '<label class="filebtn alt">Choose from gallery<input id="billFile" type="file" accept="image/*"></label></div>' +
     '<div class="hint" id="scanHint" role="status">The photo is read on this device. It isn\'t uploaded anywhere.</div><div class="err" id="scanErr" role="alert"></div>' +
     '<div class="actions" style="margin-top:0"><button type="button" data-act="close">Cancel</button><span class="spacer"></span><button type="button" data-act="billmanual">Enter items by hand</button></div></form>');
-  $("#billFile").onchange = ev => { const f = ev.target.files && ev.target.files[0]; if (f) scanFile(f); };
+  // "capture" opens the camera straight away; without it many phones only offer the gallery.
+  for (const id of ["#billCam", "#billFile"]) $(id).onchange = ev => { const f = ev.target.files && ev.target.files[0]; if (f) scanFile(f); };
 }
 async function scanFile(file){
   // If the dialog is closed, or replaced by another screen, while the photo is still being read, the result is dropped.
