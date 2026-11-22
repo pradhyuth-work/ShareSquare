@@ -114,6 +114,9 @@
   .balbtn:focus-visible{outline:2px solid var(--green);outline-offset:2px}
   .baldetail{padding-left:2px;border-bottom:1px solid var(--rule)}
   .baldetail li span:first-child{flex:1}.baldetail li small{color:var(--ink-soft)}
+  .baltotals{list-style:none;margin:6px 0 0;padding:6px 0 0;border-top:2px solid var(--rule);font-family:var(--mono);font-size:13.5px}
+  .baltotals li{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
+  .baltotals li:last-child{font-weight:700}
   .baldetail .pos{color:var(--ok)}.baldetail .neg{color:var(--err)}.baldetail .zero{color:var(--ink-soft)}
   .bal strong{font:600 16.5px var(--serif)}
   .bal .pos{color:var(--ok);font-weight:600}.bal .neg{color:var(--err);font-weight:600}.bal .zero{color:var(--ink-soft)}

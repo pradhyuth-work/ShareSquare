@@ -303,7 +303,9 @@ function viewBalances(G, b){
         if (e.kind === "p") return "<li><span>" + fmtDate(e.date) + " · " + esc(who(e.from)) + " paid " + esc(who(e.to)) + "</span>" + amt + "</li>";
         const how = e.paid ? "paid " + fmt(e.paid) + (e.share ? ", share " + fmt(e.share) : "") : "share " + fmt(e.share);
         return "<li><span>" + fmtDate(e.date) + " · " + esc(e.desc) + " <small>" + how + "</small></span>" + amt + "</li>";
-      }).join("") + "</ul>" : '<p class="help">No expenses yet.</p>') + "</div>";
+      }).join("") + "</ul>" : '<p class="help">No expenses yet.</p>');
+      const pay = b.sent[m.id] - b.recv[m.id], line = (k, v, c) => '<li class="tot"><span>' + k + '</span><span class="' + (c || "") + '">' + v + "</span></li>";
+      r += '<ul class="baltotals">' + line("Total paid", fmt(b.paid[m.id])) + line("Total share of expenses", fmt(b.share[m.id])) + (pay ? line("Payments settled", (pay > 0 ? "+" : "") + fmt(pay)) : "") + line("Balance", (n > 0 ? "+" : "") + fmt(n), n > 0 ? "pos" : n < 0 ? "neg" : "zero") + "</ul></div>";
     }
     return r;
   }).join("") + "</section>";
