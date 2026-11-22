@@ -1,5 +1,5 @@
 import { sb, configured } from "./client.js";
-import { MONTHS, fmt as fmtM, fmtWhole as fmtW, parseMoney, computeSplit, balances, settlements, involved, mname } from "./math.js";
+import { MONTHS, fmt as fmtM, fmtWhole as fmtW, parseMoney, computeSplit, balances, settlements, involved, mname, memberEntries } from "./math.js";
 import { buildXlsx, groupSheets } from "./xlsx.js";
 import { parseReceipt, splitBill } from "./bill.js";
 
@@ -11,7 +11,7 @@ const fmtDate = d => { const [, m, dd] = d.split("-").map(Number); return dd + "
 const safeName = s => (s || "group").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 40) || "group";
 
 const app = $("#app"), chrome = $("#chrome"), dlg = $("#dlg");
-const S = { boot: true, session: null, me: null, view: "loading", authMode: "in", groups: [], G: null, tab: "expenses", openId: null, preview: null };
+const S = { boot: true, session: null, me: null, view: "loading", authMode: "in", groups: [], G: null, tab: "expenses", openId: null, balOpen: null, preview: null };
 let seq = 0, rt = null, D = null, refreshTimer = null, refreshSeq = 0;
 
 /* There are no accounts or email: every device gets a silent, anonymous Supabase Auth session
@@ -231,7 +231,7 @@ async function openGroup(id){
   try { g = await loadGroup(id); } catch (e){ if (my === seq) renderError(e); return; }
   if (my !== seq) return;
   if (!g){ toast("We couldn't find that group, or you're not in it."); location.hash = ""; return; }
-  S.G = g; S.tab = "expenses"; S.openId = null; subscribe(id); renderGroup();
+  S.G = g; S.tab = "expenses"; S.openId = null; S.balOpen = null; subscribe(id); renderGroup();
 }
 async function refresh(){
   if (!S.G) return;
@@ -294,8 +294,18 @@ function simplifyOn(G){
 function viewBalances(G, b){
   let h = '<section class="paper"><p class="kicker">Balances</p><h2>Who is owed what</h2>';
   h += G.members.map(m => {
-    const n = b.net[m.id];
-    return '<div class="bal"><strong>' + esc(m.name) + (m.id === G.me ? ' <em class="you">you</em>' : "") + "</strong>" + (n > 0 ? '<span class="pos">gets back ' + fmt(n) + "</span>" : n < 0 ? '<span class="neg">owes ' + fmt(-n) + "</span>" : '<span class="zero">settled up</span>') + "</div>";
+    const n = b.net[m.id], open = S.balOpen === m.id;
+    let r = '<button class="bal balbtn" data-act="balopen" data-id="' + m.id + '" aria-expanded="' + open + '"><strong>' + esc(m.name) + (m.id === G.me ? ' <em class="you">you</em>' : "") + "</strong>" + (n > 0 ? '<span class="pos">gets back ' + fmt(n) + "</span>" : n < 0 ? '<span class="neg">owes ' + fmt(-n) + "</span>" : '<span class="zero">settled up</span>') + "</button>";
+    if (open){
+      const rows = memberEntries(G, m.id);
+      r += '<div class="detail baldetail">' + (rows.length ? "<ul>" + rows.map(e => {
+        const amt = '<span class="' + (e.net > 0 ? "pos" : e.net < 0 ? "neg" : "zero") + '">' + (e.net > 0 ? "+" : "") + fmt(e.net) + "</span>";
+        if (e.kind === "p") return "<li><span>" + fmtDate(e.date) + " · " + esc(who(e.from)) + " paid " + esc(who(e.to)) + "</span>" + amt + "</li>";
+        const how = e.paid ? "paid " + fmt(e.paid) + (e.share ? ", share " + fmt(e.share) : "") : "share " + fmt(e.share);
+        return "<li><span>" + fmtDate(e.date) + " · " + esc(e.desc) + " <small>" + how + "</small></span>" + amt + "</li>";
+      }).join("") + "</ul>" : '<p class="help">No expenses yet.</p>') + "</div>";
+    }
+    return r;
   }).join("") + "</section>";
   const simplify = simplifyOn(G), sug = settlements(G, simplify);
   h += '<section class="paper"><p class="kicker">Settle up</p><h2>' + (sug.length ? (simplify ? "Fewest payments to clear everything" : "Who owes whom") : "Everyone is settled up") + "</h2>";
@@ -613,6 +623,7 @@ document.addEventListener("click", e => {
       case "bchip": { const it = B.items.find(i => String(i.k) === t.dataset.k); if (it){ it.who[t.dataset.m] = !it.who[t.dataset.m]; syncChips(it); updateBill(); } break; }
       case "ball": { const it = B.items.find(i => String(i.k) === t.dataset.k); if (it){ const on = !G.members.every(m => it.who[m.id]); G.members.forEach(m => { it.who[m.id] = on; }); syncChips(it); updateBill(); } break; }
       case "edit": openExpense(t.dataset.id); break;
+      case "balopen": S.balOpen = S.balOpen === t.dataset.id ? null : t.dataset.id; renderGroup(); break;
       case "toggle": S.openId = S.openId === t.dataset.id ? null : t.dataset.id; renderGroup(); break;
       case "del": {
         const rec = G.expenses.find(x => x.id === t.dataset.id); if (!rec) break;

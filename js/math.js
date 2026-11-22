@@ -72,6 +72,22 @@ export function balances(G){
   return { paid, share, sent, recv, net };
 }
 
+// Every expense and payment that moves one person's balance, newest first.
+// `net` is that item's effect on the person (+ they get back, - they owe); the nets add up to balances(G).net[id].
+export function memberEntries(G, id){
+  const out = [];
+  G.expenses.forEach(e => {
+    const paid = e.payer === id ? e.amount : 0, inSplit = e.shares && id in e.shares, share = inSplit ? e.shares[id] : 0;
+    if (!paid && !inSplit) return;
+    out.push({ kind: "e", id: e.id, date: e.date, ts: e.ts || 0, desc: e.desc, paid, share, net: paid - share });
+  });
+  G.payments.forEach(p => {
+    if (p.from !== id && p.to !== id) return;
+    out.push({ kind: "p", id: p.id, date: p.date, ts: p.ts || 0, from: p.from, to: p.to, net: p.from === id ? p.amount : -p.amount });
+  });
+  return out.sort((a, b) => b.date.localeCompare(a.date) || b.ts - a.ts);
+}
+
 // Fewest payments that clear every balance.
 export function settleUp(net){
   const cr = [], db = [];

@@ -110,6 +110,11 @@
   .detail li{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--rule);padding:3px 0}
   .bal{display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:10px 2px;border-bottom:1px solid var(--rule)}
   .bal:last-child{border-bottom:0}
+  .balbtn{all:unset;box-sizing:border-box;display:flex;justify-content:space-between;gap:10px;align-items:baseline;width:100%;padding:10px 2px;border-bottom:1px solid var(--rule);cursor:pointer}
+  .balbtn:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+  .baldetail{padding-left:2px;border-bottom:1px solid var(--rule)}
+  .baldetail li span:first-child{flex:1}.baldetail li small{color:var(--ink-soft)}
+  .baldetail .pos{color:var(--ok)}.baldetail .neg{color:var(--err)}.baldetail .zero{color:var(--ink-soft)}
   .bal strong{font:600 16.5px var(--serif)}
   .bal .pos{color:var(--ok);font-weight:600}.bal .neg{color:var(--err);font-weight:600}.bal .zero{color:var(--ink-soft)}
   .stamp{display:inline-block;font:700 15px/1 var(--mono);color:var(--green);border:1px solid var(--green);border-radius:5px;padding:4px 7px;background:rgba(57,255,142,.06);white-space:nowrap}

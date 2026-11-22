@@ -1,7 +1,7 @@
 // Run with:  npm test   (or: node --test)
 import test from "node:test";
 import assert from "node:assert/strict";
-import { largestRemainder, computeSplit, balances, settleUp, parseMoney, fmt, involved } from "../js/math.js";
+import { largestRemainder, computeSplit, balances, settleUp, parseMoney, fmt, involved, memberEntries } from "../js/math.js";
 
 const sum = a => a.reduce((x, y) => x + y, 0);
 const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
@@ -129,4 +129,21 @@ test("pairwiseDebts shows direct debts; settlements() switches on simplify", asy
   // payments reduce the direct debt
   H.payments.push({ from: "b", to: "a", amount: 400 });
   assert.equal(settlements(H, false).find(x => x.from === "b" && x.to === "a").amount, 600);
+});
+
+test("memberEntries lists each expense and payment and adds up to the person's balance", () => {
+  const G = {
+    members: [{ id: "a" }, { id: "b" }, { id: "c" }],
+    expenses: [
+      { id: "e1", desc: "Dinner", date: "2026-11-01", ts: 1, payer: "a", amount: 9000, shares: { a: 3000, b: 3000, c: 3000 } },
+      { id: "e2", desc: "Cab", date: "2026-11-02", ts: 2, payer: "b", amount: 600, shares: { a: 300, b: 300 } }
+    ],
+    payments: [{ id: "p1", date: "2026-11-03", ts: 3, from: "b", to: "a", amount: 1000 }]
+  };
+  for (const m of G.members){
+    const rows = memberEntries(G, m.id);
+    assert.equal(rows.reduce((x, r) => x + r.net, 0), balances(G).net[m.id]);
+  }
+  assert.deepEqual(memberEntries(G, "c").map(r => r.id), ["e1"]);
+  assert.deepEqual(memberEntries(G, "a").map(r => r.id), ["p1", "e2", "e1"]);
 });
